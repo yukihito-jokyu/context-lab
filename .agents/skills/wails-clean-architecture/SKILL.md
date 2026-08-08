@@ -35,6 +35,7 @@ Wails 標準構成を維持し、Wails 依存は `handler/wails` と起動部分
 - `app.go` に binding メソッド、Request / Response、ビジネスロジックを置かない。
 - `main.go` は DI を組み立て、`wails.Run` を呼ぶ。
 - `Bind` には `internal/handler/wails` 配下の handler インスタンスを登録する。
+- `internal/bootstrap` は作成しない。起動時の依存組み立ては `main.go` に置く。
 
 ## 関数コメント
 
@@ -120,6 +121,7 @@ Wails 標準構成を維持し、Wails 依存は `handler/wails` と起動部分
 
 ## 実装ファイル追加時の命名
 
+- 同一Wails機能のhandler、usecase、repository実装は、責務が同じなら同じ機能名のファイル名へそろえる。例: 実験一覧は各層で `experiments.go` とする。
 - repository 実装名には保存方式を含める。
 - 例: `FileUserRepository`
 - 例: `SQLiteUserRepository`

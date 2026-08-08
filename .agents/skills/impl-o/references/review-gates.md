@@ -8,7 +8,9 @@
 
 ## 実装レビュー
 
-- handler、application、domain、adapter、frontend service、画面の責務が分離されているか。
+- バックエンドレビューでは、handler、application、domain、adapterの責務・依存方向とGoテストを確認する。
+- フロントエンドレビューでは、frontend service、画面、生成binding利用、画面テストを確認する。
+- バックエンド・フロントエンドの独立レビューを同時に開始し、互いの未修正領域だけを読み取り専用で確認する。
 - すべての画面操作に具体的なWails関数または画面内状態変更があるか。
 - 成功・失敗DTOは画面に安全かつ理解可能に表示されるか。
 - 生成bindingを手編集していないか。
