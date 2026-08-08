@@ -1,0 +1,26 @@
+# mac
+.DS_Store
+
+# documents
+docs
+
+# wails
+build/bin
+node_modules
+*.tsbuildinfo
+frontend/dist/*
+
+# tools
+.cache/
+.local/
+
+# coverage
+coverage/
+
+# Storybook
+frontend/*storybook.log
+frontend/storybook-static/
+
+# Playwright E2E
+frontend/playwright-report/
+frontend/test-results/
