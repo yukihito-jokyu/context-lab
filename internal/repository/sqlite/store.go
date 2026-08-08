@@ -27,7 +27,8 @@ var readMigrationDirectory = func() ([]fs.DirEntry, error) {
 
 // Store はSQLiteの実験読み出しadapter。
 type Store struct {
-	db *sql.DB
+	db                       *sql.DB
+	beginBriefingTransaction func(context.Context) (briefingTransaction, error)
 }
 
 // Open は管理ディレクトリとSQLiteスキーマを初期化。
@@ -41,7 +42,12 @@ func Open(dataDirectory string) (*Store, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	store := &Store{db: db}
+	store := &Store{
+		db: db,
+		beginBriefingTransaction: func(ctx context.Context) (briefingTransaction, error) {
+			return db.BeginTx(ctx, nil)
+		},
+	}
 	if err := store.migrate(context.Background()); err != nil {
 		_ = db.Close()
 
