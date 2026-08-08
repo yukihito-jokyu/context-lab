@@ -1,0 +1,98 @@
+version: "3"
+
+tasks:
+  install:
+    dir: frontend
+    cmds: [npm install]
+
+  generate:
+    cmds: [wails generate module]
+
+  test:
+    env:
+      GOCACHE: "{{.TASKFILE_DIR}}/.cache/go-build"
+    cmds: [go test ./...]
+
+  test:integration:
+    env:
+      GOCACHE: "{{.TASKFILE_DIR}}/.cache/go-build"
+    cmds: [go test -tags=integration ./...]
+
+  test:style:
+    env:
+      GOCACHE: "{{.TASKFILE_DIR}}/.cache/go-build"
+    cmds:
+      - go run .agents/skills/go-test-style/scripts/check_test_literal_layout.go -baseline .agents/skills/go-test-style/scripts/test-literal-layout.baseline internal test
+
+  test:style:baseline:
+    env:
+      GOCACHE: "{{.TASKFILE_DIR}}/.cache/go-build"
+    cmds:
+      - go run .agents/skills/go-test-style/scripts/check_test_literal_layout.go -baseline .agents/skills/go-test-style/scripts/test-literal-layout.baseline -write-baseline internal test
+
+  test:policy:scripts:
+    env:
+      GOCACHE: "{{.TASKFILE_DIR}}/.cache/go-build"
+    cmds:
+      - go test .agents/skills/go-test-style/scripts/check_test_literal_layout.go .agents/skills/go-test-style/scripts/check_test_literal_layout_test.go
+      - go test .agents/skills/go-test-style/scripts/check_go_coverage.go .agents/skills/go-test-style/scripts/check_go_coverage_test.go
+
+  test:coverage:
+    env:
+      GOCACHE: "{{.TASKFILE_DIR}}/.cache/go-build"
+    cmds:
+      - mkdir -p coverage
+      - go test ./... -coverprofile=coverage/coverage.out
+      - go tool cover -html=coverage/coverage.out -o coverage/coverage.html
+
+  test:coverage:check:
+    requires:
+      vars: [TARGETS]
+    vars:
+      PACKAGES: '{{default "./..." .PACKAGES}}'
+    env:
+      GOCACHE: "{{.TASKFILE_DIR}}/.cache/go-build"
+    cmds:
+      - mkdir -p coverage
+      - go test {{.PACKAGES}} -coverprofile=coverage/targeted.out
+      - go run .agents/skills/go-test-style/scripts/check_go_coverage.go -profile coverage/targeted.out {{.TARGETS}}
+
+  format:
+    cmds:
+      - find . -type f -name '*.go' -not -path './docs/*' -not -path './.agents/*' -exec gofmt -w {} +
+
+  format:check:
+    cmds:
+      - test -z "$(find . -type f -name '*.go' -not -path './docs/*' -not -path './.agents/*' -exec gofmt -l {} +)"
+
+  lint:
+    cmds: [golangci-lint run]
+
+  backend:check:
+    cmds: [task format:check, task lint, task test]
+
+  frontend:check:
+    dir: frontend
+    cmds: [npm run check]
+
+  frontend:build:
+    dir: frontend
+    cmds: [npm run build]
+
+  frontend:storybook:
+    dir: frontend
+    cmds: [npm run storybook]
+
+  frontend:storybook:build:
+    dir: frontend
+    cmds: [npm run build-storybook]
+
+  frontend:storybook:test:
+    dir: frontend
+    cmds: [npm run test-storybook]
+
+  frontend:e2e:
+    dir: frontend
+    cmds: [npm run test:e2e]
+  dev:
+    cmds: [wails dev]
