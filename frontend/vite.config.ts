@@ -13,10 +13,17 @@ export default defineConfig({
   optimizeDeps: {
     include: [
       "@radix-ui/react-alert-dialog",
+      "@radix-ui/react-dialog",
+      "@radix-ui/react-label",
+      "@radix-ui/react-select",
+      "@radix-ui/react-separator",
       "@testing-library/dom",
       "aria-query",
+      "lucide-react",
       "lz-string",
       "next-themes",
+      "sonner",
+      "storybook/test",
     ],
   },
   resolve: {
