@@ -21,12 +21,15 @@ description: Wails関数1件を単位とするGitHub Issueの実装を、設計�
 | 担当 | 主な責務 | 書込み範囲 |
 | --- | --- | --- |
 | 設計確認 | Issueと設計の整合、DTO・状態・境界の確認 | 原則読み取り専用 |
-| Go実装 | handler、application、domain、repository/adapter、テスト | `internal/`、Goテスト |
-| React実装 | service、画面、shadcn状態、画面テスト | `frontend/src/` |
+| Wails/Go実装 | handler、application、domain、repository/adapter、テスト | `internal/`、Goテスト |
+| frontend実装 | service、画面、shadcn状態、画面テスト | `frontend/src/` |
 | 検証 | テスト選定と実行、失敗再現 | 原則読み取り専用。必要時のみテスト |
-| 独立レビュー | 実装・画面・テスト・安全境界の検査 | 読み取り専用 |
+| バックエンド独立レビュー | handler、application、domain、repository、Goテストの検査 | 読み取り専用 |
+| フロントエンド独立レビュー | service、画面、binding利用、画面テストの検査 | 読み取り専用 |
 
-Go実装とReact実装は、所有パスが分離される場合に同時に開始する。共有DTO・生成bindingはオーケストレーターだけが統合し、必要な生成はGo側の公開契約確定後に実行する。担当結果を統合した後、バックエンドとフロントエンドの独立レビューを同時に開始する。レビュー後はオーケストレーターが指摘を分類し、該当担当へ修正を委譲して再検証する。[review-gates.md](references/review-gates.md)を読む。
+Wails/Go実装とfrontend実装は、所有パスが分離される場合、同一フェーズで必ず同時に開始する。開始前にオーケストレーターが実装契約を固定し、両担当へ渡す。共有DTO・生成bindingはオーケストレーターだけが統合し、必要な生成はGo側の公開契約確定後に実行する。担当結果を統合した後、バックエンド独立レビューとフロントエンド独立レビューを別担当へ同時に開始する。レビュー後はオーケストレーターが指摘を分類し、該当担当へ修正を委譲して再検証する。[review-gates.md](references/review-gates.md)を読む。
+
+Go側の委譲前に、`internal/bootstrap` を作成・使用しないこと、同一機能のusecaseファイル名をhandler・repositoryと合わせることを確認する。実験一覧は全層で `experiments.go` を使う。
 
 ## 常に守る境界
 

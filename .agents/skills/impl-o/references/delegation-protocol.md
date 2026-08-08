@@ -13,7 +13,7 @@
 ## 依頼文の型
 
 ```text
-担当: <設計確認 | Go実装 | React実装 | 検証 | 独立レビュー>
+担当: <設計確認 | Wails/Go実装 | frontend実装 | 検証 | バックエンド独立レビュー | フロントエンド独立レビュー>
 対象: Issue #<番号> / Wails関数 <名前>
 契約: <入力・成功・失敗・画面操作>
 所有範囲: <編集可能パスまたは読み取り専用>
@@ -23,8 +23,10 @@
 
 ## 実装担当の分割
 
-- Go担当とReact担当は別パスを所有し、共有ファイルがなければ同時に開始する。React担当には固定済みの公開契約とmock可能なservice境界を渡す。
+- Wails/Go担当とfrontend担当は別パスを所有し、共有ファイルがなければ必ず同時に開始する。frontend担当には固定済みの公開契約とmock可能なservice境界を渡す。
 - 共有DTOや生成bindingに変更が必要なら、オーケストレーターだけが所有する。Go側の公開契約を確定してgeneratorを実行し、React側との接続を統合する。
 - 同一ファイルを扱う必要がある場合は並行委譲せず、先行担当の完了後に次担当を起動する。
-- 統合後は、バックエンド担当とフロントエンド担当の独立レビューを同時に開始する。前者はdomain/usecase/repository/handlerとGoテスト、後者はservice/画面/生成binding利用と画面テストを確認する。
+- 統合後は、バックエンド独立レビューとフロントエンド独立レビューを別担当へ同時に開始する。前者はdomain/usecase/repository/handlerとGoテスト、後者はservice/画面/生成binding利用と画面テストを確認する。
 - 設計確認・独立レビュー担当は、修正を直接行わず根拠と重大度を報告する。
+- Wails/Go担当は `internal/bootstrap` を作成・使用しない。起動時の依存組み立ては `main.go` に置く。
+- 同一Wails機能のusecaseファイル名はhandler・repository実装と合わせる。実験一覧は `experiments.go` とする。
