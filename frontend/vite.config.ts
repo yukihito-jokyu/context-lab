@@ -11,7 +11,13 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
-    include: ["@radix-ui/react-alert-dialog", "next-themes"],
+    include: [
+      "@radix-ui/react-alert-dialog",
+      "@testing-library/dom",
+      "aria-query",
+      "lz-string",
+      "next-themes",
+    ],
   },
   resolve: {
     alias: {
