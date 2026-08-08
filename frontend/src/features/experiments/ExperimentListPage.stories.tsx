@@ -38,7 +38,12 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {
-  args: { listExperiments: async () => success },
+  args: {
+    listExperiments: async () => success,
+    startExperimentBriefing: async () => ({
+      data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
+    }),
+  },
 };
 export const Empty: Story = {
   args: {
@@ -50,10 +55,18 @@ export const Empty: Story = {
         lastConfirmedAt: confirmedAt,
       },
     }),
+    startExperimentBriefing: async () => ({
+      data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
+    }),
   },
 };
 export const Loading: Story = {
-  args: { listExperiments: () => new Promise(() => {}) },
+  args: {
+    listExperiments: () => new Promise(() => {}),
+    startExperimentBriefing: async () => ({
+      data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
+    }),
+  },
 };
 export const LoadError: Story = {
   args: {
@@ -63,5 +76,33 @@ export const LoadError: Story = {
         message: "実験一覧を取得できませんでした。",
       },
     }),
+    startExperimentBriefing: async () => ({
+      data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
+    }),
+  },
+};
+
+export const BriefingPending: Story = {
+  args: {
+    listExperiments: async () => success,
+    startExperimentBriefing: () => new Promise(() => {}),
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "新規実験" }));
+  },
+};
+
+export const BriefingError: Story = {
+  args: {
+    listExperiments: async () => success,
+    startExperimentBriefing: async () => ({
+      error: {
+        code: "UNAVAILABLE",
+        message: "実験設計を開始できませんでした。",
+      },
+    }),
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "新規実験" }));
   },
 };

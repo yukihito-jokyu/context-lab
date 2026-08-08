@@ -11,6 +11,68 @@ import (
 	"github.com/yukihito-jokyu/context-lab/internal/usecase"
 )
 
+// StartExperimentBriefingResponse は実験ブリーフ開始の成功または失敗結果。
+type StartExperimentBriefingResponse struct {
+	Data  *StartExperimentBriefingData `json:"data,omitempty"`
+	Error *ErrorResponse               `json:"error,omitempty"`
+}
+
+// StartExperimentBriefingData は画面へ返す開始識別子。
+type StartExperimentBriefingData struct {
+	BriefingSessionID string `json:"briefingSessionId"`
+	OperationID       string `json:"operationId"`
+}
+
+// ExperimentBriefingsHandler は実験ブリーフ開始のWails binding。
+type ExperimentBriefingsHandler struct {
+	startExperimentBriefing *usecase.StartExperimentBriefing
+	logger                  logger.Logger
+}
+
+// NewExperimentBriefingsHandler は実験ブリーフ開始bindingを生成。
+func NewExperimentBriefingsHandler(startExperimentBriefing *usecase.StartExperimentBriefing, appLogger logger.Logger) *ExperimentBriefingsHandler {
+	return &ExperimentBriefingsHandler{startExperimentBriefing: startExperimentBriefing, logger: appLogger}
+}
+
+// StartExperimentBriefing は実験ブリーフ開始を画面向けDTOで返す。
+func (h *ExperimentBriefingsHandler) StartExperimentBriefing(requestID string) StartExperimentBriefingResponse {
+	ctx := context.Background()
+	h.logger.Info(ctx, "start experiment briefing called")
+
+	start, err := h.startExperimentBriefing.Execute(ctx, requestID)
+	if err != nil {
+		response := failStartExperimentBriefing(err)
+		h.logger.ErrorCode(ctx, "start experiment briefing failed", response.Error.Code, slog.String("operation", "start_experiment_briefing"))
+
+		return response
+	}
+
+	data := toStartExperimentBriefingData(start)
+
+	return StartExperimentBriefingResponse{Data: &data}
+}
+
+// failStartExperimentBriefing は内部エラーを安全な画面エラーへ変換。
+func failStartExperimentBriefing(err error) StartExperimentBriefingResponse {
+	appErr := apperr.As(err)
+	if appErr == nil {
+		appErr = apperr.NewUnexpected(err)
+	}
+
+	return StartExperimentBriefingResponse{Error: &ErrorResponse{
+		Code:    string(appErr.Code),
+		Message: appErr.Error(),
+	}}
+}
+
+// toStartExperimentBriefingData はdomain開始結果を画面DTOへ変換。
+func toStartExperimentBriefingData(start domain.ExperimentBriefingStart) StartExperimentBriefingData {
+	return StartExperimentBriefingData{
+		BriefingSessionID: start.BriefingSessionID,
+		OperationID:       start.OperationID,
+	}
+}
+
 // ListExperimentsResponse はWails bindingの成功または失敗結果。
 type ListExperimentsResponse struct {
 	Data  *ListExperimentsData `json:"data,omitempty"`
