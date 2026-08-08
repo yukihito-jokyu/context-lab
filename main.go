@@ -12,6 +12,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	wailshandler "github.com/yukihito-jokyu/context-lab/internal/handler/wails"
 	"github.com/yukihito-jokyu/context-lab/internal/logger"
+	"github.com/yukihito-jokyu/context-lab/internal/repository/acp"
 	"github.com/yukihito-jokyu/context-lab/internal/repository/sqlite"
 	"github.com/yukihito-jokyu/context-lab/internal/usecase"
 )
@@ -45,6 +46,7 @@ func main() {
 	}()
 
 	experimentsHandler := wailshandler.NewExperimentsHandler(usecase.NewListExperiments(store), appLogger)
+	experimentBriefingsHandler := wailshandler.NewExperimentBriefingsHandler(usecase.NewStartExperimentBriefing(store, acp.NotReadyBriefingStarter{}), appLogger)
 
 	err = wails.Run(&options.App{
 		Title:       "Context Lab",
@@ -52,7 +54,7 @@ func main() {
 		Height:      800,
 		AssetServer: &assetserver.Options{Assets: assets},
 		OnStartup:   app.startup,
-		Bind:        []interface{}{experimentsHandler},
+		Bind:        []interface{}{experimentsHandler, experimentBriefingsHandler},
 	})
 	if err != nil {
 		appLogger.Error(context.Background(), "run application", err)

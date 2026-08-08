@@ -3,17 +3,135 @@ package wails
 import (
 	"context"
 	"errors"
-	"io"
-	"log/slog"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/yukihito-jokyu/context-lab/internal/domain"
 	apperr "github.com/yukihito-jokyu/context-lab/internal/errors"
 	"github.com/yukihito-jokyu/context-lab/internal/logger"
 	"github.com/yukihito-jokyu/context-lab/internal/usecase"
+	"io"
+	"log/slog"
+	"strings"
+	"time"
 )
+
+// Wails実験ブリーフ開始の成功と安全な失敗返却。
+func TestExperimentBriefingsHandlerStartExperimentBriefing(t *testing.T) {
+	tests := []struct {
+		name      string
+		requestID string
+		storeErr  error
+		wantCode  apperr.Code
+	}{
+		{
+			name:      "開始識別子だけを返す",
+			requestID: "request-1",
+		},
+		{
+			name:      "内部エラーを安全なコードへ変換する",
+			requestID: "request-2",
+			storeErr:  errors.New("database credential leaked"),
+			wantCode:  apperr.CodeBriefingStartFailed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &handlerBriefingStore{beginErr: tt.storeErr}
+			handler := NewExperimentBriefingsHandler(usecase.NewStartExperimentBriefing(store, handlerBriefingStarter{}), newTestLogger())
+
+			got := handler.StartExperimentBriefing(tt.requestID)
+			if tt.wantCode != "" {
+				if got.Error == nil {
+					t.Fatal("Error = nil, want safe error")
+				}
+				if got.Error.Code != string(tt.wantCode) {
+					t.Errorf("Error.Code = %q, want %q", got.Error.Code, tt.wantCode)
+				}
+				if got.Data != nil {
+					t.Errorf("Data = %+v, want nil", got.Data)
+				}
+
+				return
+			}
+			if got.Error != nil {
+				t.Fatalf("Error = %+v, want nil", got.Error)
+			}
+			if got.Data == nil {
+				t.Fatal("Data = nil, want start identifiers")
+			}
+			if got.Data.BriefingSessionID != "session-1" {
+				t.Errorf("BriefingSessionID = %q, want %q", got.Data.BriefingSessionID, "session-1")
+			}
+			if got.Data.OperationID != "operation-1" {
+				t.Errorf("OperationID = %q, want %q", got.Data.OperationID, "operation-1")
+			}
+		})
+	}
+}
+
+// Wails実験ブリーフ開始の想定外エラー変換。
+func TestFailStartExperimentBriefing(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantCode apperr.Code
+	}{
+		{
+			name:     "想定外エラーを安全なコードへ変換する",
+			err:      errors.New("internal detail"),
+			wantCode: apperr.CodeUnexpected,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := failStartExperimentBriefing(tt.err)
+			if got.Error == nil {
+				t.Fatal("Error = nil, want safe error")
+			}
+			if got.Error.Code != string(tt.wantCode) {
+				t.Errorf("Error.Code = %q, want %q", got.Error.Code, tt.wantCode)
+			}
+		})
+	}
+}
+
+// handlerBriefingStore はhandler用開始記録portのtest double。
+type handlerBriefingStore struct {
+	beginErr error
+}
+
+// BeginExperimentBriefing は指定済み開始結果を返却。
+func (s *handlerBriefingStore) BeginExperimentBriefing(context.Context, string) (domain.ExperimentBriefingStart, bool, error) {
+	if s.beginErr != nil {
+		return domain.ExperimentBriefingStart{}, false, s.beginErr
+	}
+
+	return domain.ExperimentBriefingStart{
+		BriefingSessionID: "session-1",
+		OperationID:       "operation-1",
+		State:             domain.BriefingStartStateStarting,
+	}, true, nil
+}
+
+// MarkExperimentBriefingStarted は開始済み状態を受理。
+func (*handlerBriefingStore) MarkExperimentBriefingStarted(context.Context, string) error {
+	return nil
+}
+
+// MarkExperimentBriefingFailed は失敗状態を受理。
+func (*handlerBriefingStore) MarkExperimentBriefingFailed(context.Context, string, string) error {
+	return nil
+}
+
+// handlerBriefingStarter はhandler用外部開始portのtest double。
+type handlerBriefingStarter struct{}
+
+// StartExperimentBriefing は開始を受理。
+func (handlerBriefingStarter) StartExperimentBriefing(context.Context, string, string) error {
+	return nil
+}
 
 // ListExperimentsの成功と安全な失敗返却。
 func TestExperimentsHandlerListExperiments(t *testing.T) {
