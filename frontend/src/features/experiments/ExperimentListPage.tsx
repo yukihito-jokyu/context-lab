@@ -1,10 +1,17 @@
 import { AlertCircle, ClipboardList, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Empty,
   EmptyDescription,
@@ -13,11 +20,13 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import type { ListExperimentsService } from "./services/list-experiments-service";
+import type { StartExperimentBriefingService } from "./services/start-experiment-briefing-service";
 
 type ListData = Awaited<ReturnType<ListExperimentsService>>["data"];
 
 type ExperimentListPageProps = {
   listExperiments: ListExperimentsService;
+  startExperimentBriefing: StartExperimentBriefingService;
 };
 
 const formatDateTime = (value: unknown) => {
@@ -73,10 +82,22 @@ function ExperimentCard({
 
 export function ExperimentListPage({
   listExperiments,
+  startExperimentBriefing,
 }: ExperimentListPageProps) {
   const [data, setData] = useState<ListData>();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<{ code: string; message: string }>();
+  const [isBriefingDialogOpen, setIsBriefingDialogOpen] = useState(false);
+  const [isBriefingStarting, setIsBriefingStarting] = useState(false);
+  const [briefingError, setBriefingError] = useState<{
+    code: string;
+    message: string;
+  }>();
+  const [briefingStart, setBriefingStart] = useState<{
+    briefingSessionId: string;
+    operationId: string;
+  }>();
+  const hasStartedForOpenRef = useRef(false);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -109,6 +130,51 @@ export function ExperimentListPage({
     void load();
   }, [load]); // 初期表示と再読込は同じqueryを使う。
 
+  const beginBriefing = useCallback(async () => {
+    setIsBriefingStarting(true);
+    setBriefingError(undefined);
+    setBriefingStart(undefined);
+    try {
+      const response = await startExperimentBriefing(crypto.randomUUID());
+      if (response.data) {
+        setBriefingStart(response.data);
+        return;
+      }
+      if (response.error) {
+        setBriefingError(response.error);
+        return;
+      }
+      setBriefingError({
+        code: "UNKNOWN",
+        message: "実験設計の開始を受け付けられませんでした。",
+      });
+    } catch {
+      setBriefingError({
+        code: "UNKNOWN",
+        message: "実験設計の開始を受け付けられませんでした。",
+      });
+    } finally {
+      setIsBriefingStarting(false);
+    }
+  }, [startExperimentBriefing]);
+
+  useEffect(() => {
+    if (!isBriefingDialogOpen) {
+      hasStartedForOpenRef.current = false;
+      return;
+    }
+    if (hasStartedForOpenRef.current) return;
+
+    hasStartedForOpenRef.current = true;
+    void beginBriefing();
+  }, [beginBriefing, isBriefingDialogOpen]);
+
+  const openBriefingDialog = () => {
+    setBriefingError(undefined);
+    setBriefingStart(undefined);
+    setIsBriefingDialogOpen(true);
+  };
+
   const hasExperiments = Boolean(
     data &&
       (data.experiments.length > 0 || data.cancelledExperiments.length > 0),
@@ -125,9 +191,19 @@ export function ExperimentListPage({
               目的と進行状況を確認し、次の作業を再開します。
             </p>
           </div>
-          <p className="text-sm text-muted-foreground">
-            最終確認: {formatDateTime(data?.lastConfirmedAt)}
-          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-sm text-muted-foreground">
+              最終確認: {formatDateTime(data?.lastConfirmedAt)}
+            </p>
+            <Button
+              id="new-experiment-button"
+              disabled={isBriefingStarting}
+              onClick={openBriefingDialog}
+              type="button"
+            >
+              新規実験
+            </Button>
+          </div>
         </header>
 
         {isLoading && (
@@ -178,6 +254,14 @@ export function ExperimentListPage({
               <EmptyDescription>
                 実験を作成すると、ここに進行状況が表示されます。
               </EmptyDescription>
+              <Button
+                id="empty-create-experiment-button"
+                disabled={isBriefingStarting}
+                onClick={openBriefingDialog}
+                type="button"
+              >
+                新規実験
+              </Button>
             </EmptyHeader>
           </Empty>
         )}
@@ -250,6 +334,56 @@ export function ExperimentListPage({
             </details>
           )}
       </div>
+      <Dialog
+        onOpenChange={(open) => {
+          if (!isBriefingStarting) setIsBriefingDialogOpen(open);
+        }}
+        open={isBriefingDialogOpen}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>実験設計を開始</DialogTitle>
+            <DialogDescription>
+              実験の目的や評価方法を整理する壁打ちを開始します。
+            </DialogDescription>
+          </DialogHeader>
+          {isBriefingStarting && (
+            <p id="briefing-start-pending" role="status">
+              実験設計を開始しています…
+            </p>
+          )}
+          {briefingError && (
+            <Alert id="briefing-start-error" role="alert" variant="destructive">
+              <AlertCircle />
+              <AlertTitle>実験設計を開始できません</AlertTitle>
+              <AlertDescription className="space-y-4">
+                <p>{briefingError.message}</p>
+                <Button
+                  onClick={() => void beginBriefing()}
+                  type="button"
+                  variant="outline"
+                >
+                  もう一度試す
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
+          {briefingStart && (
+            <div className="space-y-2" role="status">
+              <p>実験設計の開始を受け付けました。</p>
+              <p className="text-sm text-muted-foreground">
+                ブリーフ用セッション: {briefingStart.briefingSessionId}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                操作: {briefingStart.operationId}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                会話内容の取得は、次の機能で行います。
+              </p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
