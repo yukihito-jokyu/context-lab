@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { useExperimentBriefing } from "../hooks/use-experiment-briefing";
 import type { GetExperimentBriefingService } from "../services/get-experiment-briefing-service";
+import type { SendExperimentBriefMessageService } from "../services/send-experiment-brief-message-service";
 import type { StartExperimentBriefingService } from "../services/start-experiment-briefing-service";
 import { ExperimentBriefCard } from "./ExperimentBriefCard";
 import { ExperimentBriefingConversation } from "./ExperimentBriefingConversation";
@@ -19,6 +20,7 @@ type ExperimentBriefingDialogProps = {
   getExperimentBriefing: GetExperimentBriefingService;
   onOpenChange: (open: boolean) => void;
   open: boolean;
+  sendExperimentBriefMessage: SendExperimentBriefMessageService;
   startExperimentBriefing: StartExperimentBriefingService;
 };
 
@@ -26,6 +28,7 @@ export function ExperimentBriefingDialog({
   getExperimentBriefing,
   onOpenChange,
   open,
+  sendExperimentBriefMessage,
   startExperimentBriefing,
 }: ExperimentBriefingDialogProps) {
   const {
@@ -34,20 +37,24 @@ export function ExperimentBriefingDialog({
     briefingStart,
     invalidateRefresh,
     isRefreshing,
+    isSending,
     isStarting,
     refreshBriefing,
     refreshError,
+    sendBriefingMessage,
+    sendError,
     startError,
   } = useExperimentBriefing({
     isOpen: open,
     getExperimentBriefing,
+    sendExperimentBriefMessage,
     startExperimentBriefing,
   });
 
   return (
     <Dialog
       onOpenChange={(nextOpen) => {
-        if (isStarting) return;
+        if (isStarting || isSending) return;
         if (!nextOpen) invalidateRefresh();
         onOpenChange(nextOpen);
       }}
@@ -88,6 +95,9 @@ export function ExperimentBriefingDialog({
               error={refreshError}
               isRefreshing={isRefreshing}
               onRefresh={() => void refreshBriefing()}
+              isSending={isSending}
+              onSend={(message) => sendBriefingMessage(message)}
+              sendError={sendError}
             />
             <ExperimentBriefCard
               briefing={briefing}

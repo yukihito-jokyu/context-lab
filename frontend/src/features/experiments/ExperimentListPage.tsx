@@ -16,6 +16,7 @@ import { ExperimentBriefingDialog } from "./components/ExperimentBriefingDialog"
 import { formatExperimentDateTime } from "./lib/format-experiment-date-time";
 import type { GetExperimentBriefingService } from "./services/get-experiment-briefing-service";
 import type { ListExperimentsService } from "./services/list-experiments-service";
+import type { SendExperimentBriefMessageService } from "./services/send-experiment-brief-message-service";
 import type { StartExperimentBriefingService } from "./services/start-experiment-briefing-service";
 
 type ListData = Awaited<ReturnType<ListExperimentsService>>["data"];
@@ -24,6 +25,7 @@ type ExperimentListPageProps = {
   listExperiments: ListExperimentsService;
   startExperimentBriefing: StartExperimentBriefingService;
   getExperimentBriefing: GetExperimentBriefingService;
+  sendExperimentBriefMessage: SendExperimentBriefMessageService;
 };
 
 const stateBadgeVariant = (state: string) => {
@@ -73,6 +75,7 @@ export function ExperimentListPage({
   listExperiments,
   startExperimentBriefing,
   getExperimentBriefing,
+  sendExperimentBriefMessage,
 }: ExperimentListPageProps) {
   const [data, setData] = useState<ListData>();
   const [isLoading, setIsLoading] = useState(true);
@@ -272,6 +275,7 @@ export function ExperimentListPage({
         getExperimentBriefing={getExperimentBriefing}
         onOpenChange={setIsBriefingDialogOpen}
         open={isBriefingDialogOpen}
+        sendExperimentBriefMessage={sendExperimentBriefMessage}
         startExperimentBriefing={startExperimentBriefing}
       />
     </main>

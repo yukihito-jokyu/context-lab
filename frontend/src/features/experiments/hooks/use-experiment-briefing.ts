@@ -4,6 +4,7 @@ import type {
   ExperimentBriefing,
   GetExperimentBriefingService,
 } from "../services/get-experiment-briefing-service";
+import type { SendExperimentBriefMessageService } from "../services/send-experiment-brief-message-service";
 import type { StartExperimentBriefingService } from "../services/start-experiment-briefing-service";
 
 type BriefingError = { code: string; message: string };
@@ -11,12 +12,14 @@ type BriefingError = { code: string; message: string };
 type UseExperimentBriefingOptions = {
   isOpen: boolean;
   getExperimentBriefing: GetExperimentBriefingService;
+  sendExperimentBriefMessage: SendExperimentBriefMessageService;
   startExperimentBriefing: StartExperimentBriefingService;
 };
 
 export function useExperimentBriefing({
   isOpen,
   getExperimentBriefing,
+  sendExperimentBriefMessage,
   startExperimentBriefing,
 }: UseExperimentBriefingOptions) {
   const [isStarting, setIsStarting] = useState(false);
@@ -28,6 +31,9 @@ export function useExperimentBriefing({
   const [briefing, setBriefing] = useState<ExperimentBriefing>();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<BriefingError>();
+  const [isSending, setIsSending] = useState(false);
+  const [sendOperationId, setSendOperationId] = useState<string>();
+  const [sendError, setSendError] = useState<BriefingError>();
   const hasStartedForOpenRef = useRef(false);
   const refreshGenerationRef = useRef(0);
 
@@ -98,6 +104,7 @@ export function useExperimentBriefing({
       setBriefingStart(undefined);
       setStartError(undefined);
       setRefreshError(undefined);
+      setSendOperationId(undefined);
       setIsRefreshing(false);
       return;
     }
@@ -116,15 +123,58 @@ export function useExperimentBriefing({
     setIsRefreshing(false);
   }, []);
 
+  const sendBriefingMessage = useCallback(
+    async (message: string) => {
+      if (!briefingStart || isSending) return false;
+
+      setIsSending(true);
+      setSendError(undefined);
+      setSendOperationId(undefined);
+      try {
+        const response = await sendExperimentBriefMessage(
+          crypto.randomUUID(),
+          briefingStart.briefingSessionId,
+          message,
+        );
+        if (!response.data) {
+          setSendError(
+            response.error ?? {
+              code: "UNKNOWN",
+              message: "壁打ちを続けられませんでした。もう一度お試しください。",
+            },
+          );
+          return false;
+        }
+
+        setSendOperationId(response.data.operationId);
+        await refreshBriefing();
+        return true;
+      } catch {
+        setSendError({
+          code: "UNKNOWN",
+          message: "壁打ちを続けられませんでした。もう一度お試しください。",
+        });
+        return false;
+      } finally {
+        setIsSending(false);
+      }
+    },
+    [briefingStart, isSending, refreshBriefing, sendExperimentBriefMessage],
+  );
+
   return {
     beginBriefing,
     briefing,
     briefingStart,
     invalidateRefresh,
     isRefreshing,
+    isSending,
     isStarting,
     refreshBriefing,
     refreshError,
+    sendBriefingMessage,
+    sendError,
+    sendOperationId,
     startError,
   };
 }
