@@ -129,7 +129,11 @@ func (s *Store) listExperimentBriefingMessages(ctx context.Context, briefingSess
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("query briefing messages: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("close briefing message rows: %w", closeErr)
+		}
+	}()
 
 	messages = make([]domain.ExperimentBriefingMessage, 0)
 	for rows.Next() {
