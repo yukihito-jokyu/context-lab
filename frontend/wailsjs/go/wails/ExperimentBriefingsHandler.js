@@ -6,6 +6,10 @@ export function GetExperimentBriefing(arg1) {
   return window['go']['wails']['ExperimentBriefingsHandler']['GetExperimentBriefing'](arg1);
 }
 
+export function SendExperimentBriefMessage(arg1, arg2, arg3) {
+  return window['go']['wails']['ExperimentBriefingsHandler']['SendExperimentBriefMessage'](arg1, arg2, arg3);
+}
+
 export function StartExperimentBriefing(arg1) {
   return window['go']['wails']['ExperimentBriefingsHandler']['StartExperimentBriefing'](arg1);
 }

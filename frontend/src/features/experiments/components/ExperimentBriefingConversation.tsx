@@ -1,4 +1,5 @@
 import { AlertCircle, RefreshCw } from "lucide-react";
+import { useRef, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -11,15 +12,38 @@ type ExperimentBriefingConversationProps = {
   briefing?: ExperimentBriefing;
   error?: BriefingError;
   isRefreshing: boolean;
+  isSending: boolean;
   onRefresh: () => void;
+  onSend: (message: string) => Promise<boolean>;
+  sendError?: BriefingError;
 };
 
 export function ExperimentBriefingConversation({
   briefing,
   error,
   isRefreshing,
+  isSending,
   onRefresh,
+  onSend,
+  sendError,
 }: ExperimentBriefingConversationProps) {
+  const [message, setMessage] = useState("");
+  const [validationError, setValidationError] = useState(false);
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const submitMessage = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage) {
+      setValidationError(true);
+      messageInputRef.current?.focus();
+      return;
+    }
+
+    const wasSent = await onSend(trimmedMessage);
+    if (wasSent) setMessage("");
+  };
+
   return (
     <section aria-labelledby="briefing-chat-title" className="space-y-3">
       <div className="flex items-center justify-between gap-3">
@@ -91,6 +115,53 @@ export function ExperimentBriefingConversation({
           </article>
         ))}
       </div>
+      <form
+        className="space-y-2"
+        id="briefing-message-form"
+        onSubmit={submitMessage}
+      >
+        <label className="sr-only" htmlFor="briefing-message-input">
+          AIへの回答
+        </label>
+        <textarea
+          aria-describedby={validationError ? "briefing-error" : undefined}
+          aria-invalid={validationError}
+          className="min-h-24 w-full rounded-md border bg-background p-3 text-sm"
+          disabled={isSending}
+          id="briefing-message-input"
+          onChange={(event) => {
+            setMessage(event.target.value);
+            setValidationError(false);
+          }}
+          placeholder="背景、判断基準、対象入力、制約などを入力"
+          ref={messageInputRef}
+          value={message}
+        />
+        {validationError && (
+          <p id="briefing-error" role="alert">
+            AIへ送る内容を入力してください。
+          </p>
+        )}
+        {isSending && (
+          <p id="briefing-pending" role="status">
+            AIの次の質問とブリーフ案を確認しています…
+          </p>
+        )}
+        {sendError && (
+          <Alert id="briefing-command-error" role="alert" variant="destructive">
+            <AlertCircle />
+            <AlertTitle>壁打ちを続けられません</AlertTitle>
+            <AlertDescription>{sendError.message}</AlertDescription>
+          </Alert>
+        )}
+        <Button
+          disabled={isSending}
+          id="send-briefing-message-button"
+          type="submit"
+        >
+          送信
+        </Button>
+      </form>
     </section>
   );
 }

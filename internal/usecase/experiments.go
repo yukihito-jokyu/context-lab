@@ -20,6 +20,88 @@ type BriefingStarter interface {
 	StartExperimentBriefing(context.Context, string, string) error
 }
 
+// ExperimentBriefingMessageStore はメッセージ送信の記録と結果保存のport。
+type ExperimentBriefingMessageStore interface {
+	BeginExperimentBriefMessage(context.Context, string, string) (domain.ExperimentBriefingMessageOperation, bool, error)
+	CompleteExperimentBriefMessage(context.Context, string, string, domain.ExperimentBriefingMessageResult) error
+	FailExperimentBriefMessage(context.Context, string, string) error
+}
+
+// BriefingMessageSender は実験ブリーフ会話をACPへ委譲するport。
+type BriefingMessageSender interface {
+	SendExperimentBriefMessage(context.Context, string, string, string) (domain.ExperimentBriefingMessageResult, error)
+}
+
+// SendExperimentBriefMessage は実験ブリーフ会話送信command。
+type SendExperimentBriefMessage struct {
+	store  ExperimentBriefingMessageStore
+	sender BriefingMessageSender
+}
+
+// NewSendExperimentBriefMessage は実験ブリーフ会話送信commandを生成。
+func NewSendExperimentBriefMessage(store ExperimentBriefingMessageStore, sender BriefingMessageSender) *SendExperimentBriefMessage {
+	return &SendExperimentBriefMessage{store: store, sender: sender}
+}
+
+// Execute は実験ブリーフメッセージを記録してACPへ送信。
+func (u *SendExperimentBriefMessage) Execute(ctx context.Context, requestID, briefingSessionID, message string) (domain.ExperimentBriefingMessageOperation, error) {
+	if strings.TrimSpace(requestID) == "" || strings.TrimSpace(briefingSessionID) == "" || strings.TrimSpace(message) == "" {
+		return domain.ExperimentBriefingMessageOperation{}, apperr.New(apperr.CodeBriefingRequestInvalid)
+	}
+
+	operation, created, err := u.store.BeginExperimentBriefMessage(ctx, requestID, briefingSessionID)
+	if err != nil {
+		if appErr := apperr.As(err); appErr != nil {
+			return domain.ExperimentBriefingMessageOperation{}, appErr
+		}
+
+		return domain.ExperimentBriefingMessageOperation{}, apperr.Wrap(apperr.CodeBriefingMessageFailed, err)
+	}
+	if !created {
+		if operation.State == domain.BriefingStartStateFailed {
+			return domain.ExperimentBriefingMessageOperation{}, briefingMessageFailure(operation.FailureCode)
+		}
+		if operation.State == domain.BriefingStartStateStarting {
+			return domain.ExperimentBriefingMessageOperation{}, apperr.New(apperr.CodeBriefingMessagePending)
+		}
+
+		return operation, nil
+	}
+
+	result, err := u.sender.SendExperimentBriefMessage(ctx, operation.BriefingSessionID, operation.OperationID, strings.TrimSpace(message))
+	if err != nil {
+		failure := apperr.As(err)
+		if failure == nil {
+			failure = apperr.New(apperr.CodeBriefingMessageFailed)
+		}
+		if markErr := u.store.FailExperimentBriefMessage(ctx, requestID, string(failure.Code)); markErr != nil {
+			return domain.ExperimentBriefingMessageOperation{}, apperr.Wrap(apperr.CodeBriefingMessageFailed, markErr)
+		}
+
+		return domain.ExperimentBriefingMessageOperation{}, failure
+	}
+	if err := u.store.CompleteExperimentBriefMessage(ctx, requestID, strings.TrimSpace(message), result); err != nil {
+		return domain.ExperimentBriefingMessageOperation{}, apperr.Wrap(apperr.CodeBriefingMessageFailed, err)
+	}
+	operation.State = domain.BriefingStartStateStarted
+
+	return operation, nil
+}
+
+// briefingMessageFailure は永続済みの安全な送信失敗を復元。
+func briefingMessageFailure(code string) error {
+	switch apperr.Code(code) {
+	case apperr.CodeACPNotReady:
+		return apperr.New(apperr.CodeACPNotReady)
+	case apperr.CodeBriefingNotActive:
+		return apperr.New(apperr.CodeBriefingNotActive)
+	case apperr.CodeBriefingRequestInvalid:
+		return apperr.New(apperr.CodeBriefingRequestInvalid)
+	default:
+		return apperr.New(apperr.CodeBriefingMessageFailed)
+	}
+}
+
 // ExperimentBriefingReader は実験ブリーフ画面を読み出すport。
 type ExperimentBriefingReader interface {
 	GetExperimentBriefing(context.Context, string) (domain.ExperimentBriefing, bool, error)

@@ -64,6 +64,630 @@ func TestStoreBeginExperimentBriefing(t *testing.T) {
 	}
 }
 
+// SQLite実験ブリーフ会話送信の保存と冪等記録。
+func TestStoreExperimentBriefMessage(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+	createdAt := "2026-08-09T00:00:00Z"
+	if _, err := store.db.Exec("INSERT INTO preparation_sessions (id, kind, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", "session-1", "experiment_brief", domain.BriefingStartStateStarted, createdAt, createdAt); err != nil {
+		t.Fatalf("seed preparation session error = %v", err)
+	}
+
+	operation, created, err := store.BeginExperimentBriefMessage(context.Background(), "request-1", "session-1")
+	if err != nil {
+		t.Fatalf("BeginExperimentBriefMessage() error = %v", err)
+	}
+	if !created {
+		t.Fatal("created = false, want true")
+	}
+	result := domain.ExperimentBriefingMessageResult{
+		AssistantMessage: "評価基準を確認します",
+		Brief: &domain.ExperimentBrief{
+			Decision:           "比較する",
+			SuccessCriteria:    "正確性",
+			RequiredConditions: "固定条件",
+		},
+	}
+	if err := store.CompleteExperimentBriefMessage(context.Background(), "request-1", "目的を確認したい", result); err != nil {
+		t.Fatalf("CompleteExperimentBriefMessage() error = %v", err)
+	}
+
+	second, created, err := store.BeginExperimentBriefMessage(context.Background(), "request-1", "session-1")
+	if err != nil {
+		t.Fatalf("second BeginExperimentBriefMessage() error = %v", err)
+	}
+	if created {
+		t.Error("second created = true, want false")
+	}
+	if second.OperationID != operation.OperationID || second.State != domain.BriefingStartStateStarted {
+		t.Errorf("second = %+v, want completed operation", second)
+	}
+	briefing, found, err := store.GetExperimentBriefing(context.Background(), "session-1")
+	if err != nil {
+		t.Fatalf("GetExperimentBriefing() error = %v", err)
+	}
+	if !found {
+		t.Fatal("found = false, want true")
+	}
+	if got := len(briefing.Messages); got != 2 {
+		t.Errorf("Messages length = %d, want 2", got)
+	}
+	if briefing.LatestBrief == nil || briefing.LatestBrief.Decision != "比較する" {
+		t.Errorf("LatestBrief = %+v, want saved brief", briefing.LatestBrief)
+	}
+}
+
+// SQLite実験ブリーフ会話の並行完了保存。
+func TestStoreCompleteExperimentBriefMessageConcurrently(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+	createdAt := "2026-08-09T00:00:00Z"
+	if _, err := store.db.Exec("INSERT INTO preparation_sessions (id, kind, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", "session-1", "experiment_brief", domain.BriefingStartStateStarted, createdAt, createdAt); err != nil {
+		t.Fatalf("seed preparation session error = %v", err)
+	}
+	for _, requestID := range []string{
+		"request-1",
+		"request-2",
+	} {
+		if _, created, err := store.BeginExperimentBriefMessage(context.Background(), requestID, "session-1"); err != nil {
+			t.Fatalf("BeginExperimentBriefMessage() error = %v", err)
+		} else if !created {
+			t.Fatalf("created = false, want true")
+		}
+	}
+
+	errorsCh := make(chan error, 2)
+	for _, requestID := range []string{
+		"request-1",
+		"request-2",
+	} {
+		go func(requestID string) {
+			errorsCh <- store.CompleteExperimentBriefMessage(context.Background(), requestID, "利用者メッセージ", domain.ExperimentBriefingMessageResult{
+				AssistantMessage: "AI応答",
+				Brief: &domain.ExperimentBrief{
+					Decision:           "判断",
+					SuccessCriteria:    "基準",
+					RequiredConditions: "条件",
+				},
+			})
+		}(requestID)
+	}
+	for range 2 {
+		if err := <-errorsCh; err != nil {
+			t.Errorf("CompleteExperimentBriefMessage() error = %v", err)
+		}
+	}
+
+	briefing, found, err := store.GetExperimentBriefing(context.Background(), "session-1")
+	if err != nil {
+		t.Fatalf("GetExperimentBriefing() error = %v", err)
+	}
+	if !found {
+		t.Fatal("found = false, want true")
+	}
+	if got := len(briefing.Messages); got != 4 {
+		t.Errorf("Messages length = %d, want 4", got)
+	}
+	for index, message := range briefing.Messages {
+		if got, want := message.SequenceNo, index+1; got != want {
+			t.Errorf("Messages[%d].SequenceNo = %d, want %d", index, got, want)
+		}
+	}
+	var operationCount, completedCount, versionCount int
+	if err := store.db.QueryRow("SELECT COUNT(*) FROM briefing_message_operations").Scan(&operationCount); err != nil {
+		t.Fatalf("message operation count error = %v", err)
+	}
+	if err := store.db.QueryRow("SELECT COUNT(*) FROM briefing_message_operations WHERE state = ?", domain.BriefingStartStateStarted).Scan(&completedCount); err != nil {
+		t.Fatalf("completed message operation count error = %v", err)
+	}
+	if err := store.db.QueryRow("SELECT COUNT(*) FROM briefing_versions").Scan(&versionCount); err != nil {
+		t.Fatalf("briefing version count error = %v", err)
+	}
+	if operationCount != 2 {
+		t.Errorf("message operations = %d, want 2", operationCount)
+	}
+	if completedCount != 2 {
+		t.Errorf("completed message operations = %d, want 2", completedCount)
+	}
+	if versionCount != 2 {
+		t.Errorf("briefing versions = %d, want 2", versionCount)
+	}
+}
+
+// SQLite実験ブリーフ会話送信開始の失敗分岐。
+func TestStoreBeginExperimentBriefMessageFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func(*testing.T, *Store)
+		want    string
+	}{
+		{
+			name: "既存operation検索失敗を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				if err := store.db.Close(); err != nil {
+					t.Fatalf("Close() error = %v", err)
+				}
+			},
+			want: "database is closed",
+		},
+		{
+			name: "未知sessionを返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(&fakeBriefingTransaction{rows: []briefingRow{fakeBriefingRow{err: sql.ErrNoRows}}})
+			},
+			want: "見つかりません",
+		},
+		{
+			name: "識別子生成失敗を返す",
+			prepare: func(t *testing.T, _ *Store) {
+				t.Helper()
+				replaceBriefingRandom(t, func([]byte) (int, error) {
+					return 0, errors.New("random unavailable")
+				})
+			},
+			want: "read random identifier",
+		},
+		{
+			name: "トランザクション開始失敗を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				store.beginBriefingTransaction = func(context.Context) (briefingTransaction, error) {
+					return nil, errors.New("begin unavailable")
+				}
+			},
+			want: "begin briefing message",
+		},
+		{
+			name: "session読込失敗を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(&fakeBriefingTransaction{rows: []briefingRow{fakeBriefingRow{err: errors.New("session unavailable")}}})
+			},
+			want: "find briefing message session",
+		},
+		{
+			name: "非開始sessionを拒否する",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(&fakeBriefingTransaction{rows: []briefingRow{fakeBriefingRow{values: []any{domain.BriefingStartStateFailed}}}})
+			},
+			want: "送信できる状態ではありません",
+		},
+		{
+			name: "operation保存失敗を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(&fakeBriefingTransaction{
+					rows:       []briefingRow{fakeBriefingRow{values: []any{domain.BriefingStartStateStarted}}},
+					execErrors: []error{errors.New("insert unavailable")},
+				})
+			},
+			want: "insert briefing message operation",
+		},
+		{
+			name: "競合後のoperation検索失敗を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				transaction := &fakeBriefingTransaction{
+					rows:       []briefingRow{fakeBriefingRow{values: []any{domain.BriefingStartStateStarted}}},
+					execErrors: []error{errors.New("UNIQUE constraint failed: briefing_message_operations.request_id")},
+				}
+				transaction.onExec = func(int) {
+					if err := store.db.Close(); err != nil {
+						t.Fatalf("Close() error = %v", err)
+					}
+				}
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(transaction)
+			},
+			want: "database is closed",
+		},
+		{
+			name: "確定失敗を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(&fakeBriefingTransaction{
+					rows:        []briefingRow{fakeBriefingRow{values: []any{domain.BriefingStartStateStarted}}},
+					commitError: errors.New("commit unavailable"),
+				})
+			},
+			want: "commit briefing message",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store, err := Open(t.TempDir())
+			if err != nil {
+				t.Fatalf("Open() error = %v", err)
+			}
+			t.Cleanup(func() {
+				if err := store.Close(); err != nil {
+					t.Errorf("Close() error = %v", err)
+				}
+			})
+			tt.prepare(t, store)
+
+			_, _, err = store.BeginExperimentBriefMessage(context.Background(), "request-1", "session-1")
+			if err == nil {
+				t.Fatal("BeginExperimentBriefMessage() error = nil, want error")
+			}
+			if got := err.Error(); !strings.Contains(got, tt.want) {
+				t.Errorf("BeginExperimentBriefMessage() error = %q, want containing %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// SQLite実験ブリーフ会話送信開始の既存operation境界。
+func TestStoreBeginExperimentBriefMessageExistingOperations(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+	createdAt := "2026-08-09T00:00:00Z"
+	for _, sessionID := range []string{
+		"session-1",
+		"session-2",
+	} {
+		if _, err := store.db.Exec("INSERT INTO preparation_sessions (id, kind, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", sessionID, "experiment_brief", domain.BriefingStartStateStarted, createdAt, createdAt); err != nil {
+			t.Fatalf("seed preparation session error = %v", err)
+		}
+	}
+	if _, created, err := store.BeginExperimentBriefMessage(context.Background(), "request-1", "session-1"); err != nil || !created {
+		t.Fatalf("BeginExperimentBriefMessage() created = %v, error = %v", created, err)
+	}
+	if _, _, err := store.BeginExperimentBriefMessage(context.Background(), "request-1", "session-2"); err == nil {
+		t.Fatal("BeginExperimentBriefMessage() error = nil, want target mismatch")
+	}
+
+	store.beginBriefingTransaction = func(context.Context) (briefingTransaction, error) {
+		transaction := &fakeBriefingTransaction{
+			rows:       []briefingRow{fakeBriefingRow{values: []any{domain.BriefingStartStateStarted}}},
+			execErrors: []error{errors.New("UNIQUE constraint failed: briefing_message_operations.request_id")},
+		}
+		transaction.onExec = func(int) {
+			if _, err := store.db.Exec("INSERT INTO briefing_message_operations (id, request_id, preparation_session_id, state) VALUES (?, ?, ?, ?)", "operation-race", "request-race", "session-1", domain.BriefingStartStateStarted); err != nil {
+				t.Fatalf("seed raced operation error = %v", err)
+			}
+		}
+
+		return transaction, nil
+	}
+	got, created, err := store.BeginExperimentBriefMessage(context.Background(), "request-race", "session-1")
+	if err != nil {
+		t.Fatalf("raced BeginExperimentBriefMessage() error = %v", err)
+	}
+	if created {
+		t.Error("created = true, want false")
+	}
+	if got.OperationID != "operation-race" {
+		t.Errorf("OperationID = %q, want %q", got.OperationID, "operation-race")
+	}
+}
+
+// SQLite実験ブリーフ会話送信完了の失敗分岐。
+func TestStoreCompleteExperimentBriefMessageFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func(*testing.T, *Store)
+		result  domain.ExperimentBriefingMessageResult
+		want    string
+	}{
+		{
+			name: "連番取得失敗を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(&fakeBriefingTransaction{rows: []briefingRow{fakeBriefingRow{err: errors.New("sequence unavailable")}}})
+			},
+			want: "find next briefing message sequence",
+		},
+		{
+			name: "利用者会話保存失敗を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(&fakeBriefingTransaction{
+					rows:       []briefingRow{fakeBriefingRow{values: []any{1}}},
+					execErrors: []error{errors.New("user insert unavailable")},
+				})
+			},
+			want: "insert user briefing message",
+		},
+		{
+			name: "AI会話保存失敗を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(&fakeBriefingTransaction{
+					rows: []briefingRow{fakeBriefingRow{values: []any{1}}},
+					execErrors: []error{
+						nil,
+						errors.New("assistant insert unavailable"),
+					},
+				})
+			},
+			result: domain.ExperimentBriefingMessageResult{AssistantMessage: "AI応答"},
+			want:   "insert assistant briefing message",
+		},
+		{
+			name: "operation更新失敗を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(&fakeBriefingTransaction{
+					rows: []briefingRow{fakeBriefingRow{values: []any{1}}},
+					execErrors: []error{
+						nil,
+						errors.New("operation update unavailable"),
+					},
+				})
+			},
+			want: "complete briefing message operation",
+		},
+		{
+			name: "ブリーフ候補保存失敗を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(&fakeBriefingTransaction{
+					rows: []briefingRow{
+						fakeBriefingRow{values: []any{1}},
+						fakeBriefingRow{values: []any{1}},
+					},
+					execErrors: []error{
+						nil,
+						errors.New("brief insert unavailable"),
+					},
+				})
+			},
+			result: domain.ExperimentBriefingMessageResult{Brief: &domain.ExperimentBrief{
+				Decision:           "判断",
+				SuccessCriteria:    "基準",
+				RequiredConditions: "条件",
+			}},
+			want: "insert briefing version",
+		},
+		{
+			name: "session更新失敗を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(&fakeBriefingTransaction{
+					rows: []briefingRow{fakeBriefingRow{values: []any{1}}},
+					execErrors: []error{
+						nil,
+						nil,
+						errors.New("session update unavailable"),
+					},
+				})
+			},
+			want: "update briefing message session",
+		},
+		{
+			name: "確定失敗を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(&fakeBriefingTransaction{
+					rows:        []briefingRow{fakeBriefingRow{values: []any{1}}},
+					commitError: errors.New("commit unavailable"),
+				})
+			},
+			want: "commit briefing message completion",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newCompleteBriefingMessageTestStore(t)
+			tt.prepare(t, store)
+
+			err := store.CompleteExperimentBriefMessage(context.Background(), "request-1", "利用者メッセージ", tt.result)
+			if err == nil {
+				t.Fatal("CompleteExperimentBriefMessage() error = nil, want error")
+			}
+			if got := err.Error(); !strings.Contains(got, tt.want) {
+				t.Errorf("CompleteExperimentBriefMessage() error = %q, want containing %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// newCompleteBriefingMessageTestStore は会話送信完了用の保存済みoperationを生成。
+func newCompleteBriefingMessageTestStore(t *testing.T) *Store {
+	t.Helper()
+
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+	createdAt := "2026-08-09T00:00:00Z"
+	if _, err := store.db.Exec("INSERT INTO preparation_sessions (id, kind, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", "session-1", "experiment_brief", domain.BriefingStartStateStarted, createdAt, createdAt); err != nil {
+		t.Fatalf("seed preparation session error = %v", err)
+	}
+	if _, err := store.db.Exec("INSERT INTO briefing_message_operations (id, request_id, preparation_session_id, state) VALUES (?, ?, ?, ?)", "operation-1", "request-1", "session-1", domain.BriefingStartStateStarting); err != nil {
+		t.Fatalf("seed briefing message operation error = %v", err)
+	}
+
+	return store
+}
+
+// SQLite実験ブリーフ会話送信完了の境界失敗。
+func TestStoreCompleteExperimentBriefMessageBoundaries(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func(*testing.T, *Store)
+		want    string
+	}{
+		{
+			name: "operation検索失敗を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				if err := store.db.Close(); err != nil {
+					t.Fatalf("Close() error = %v", err)
+				}
+			},
+			want: "database is closed",
+		},
+		{
+			name: "operation不在を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				if _, err := store.db.Exec("DELETE FROM briefing_message_operations"); err != nil {
+					t.Fatalf("delete briefing message operation error = %v", err)
+				}
+			},
+			want: "request not found",
+		},
+		{
+			name: "トランザクション開始失敗を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				store.beginBriefingTransaction = func(context.Context) (briefingTransaction, error) {
+					return nil, errors.New("begin unavailable")
+				}
+			},
+			want: "begin briefing message completion",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newCompleteBriefingMessageTestStore(t)
+			tt.prepare(t, store)
+
+			err := store.CompleteExperimentBriefMessage(context.Background(), "request-1", "利用者メッセージ", domain.ExperimentBriefingMessageResult{})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("CompleteExperimentBriefMessage() error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// SQLite実験ブリーフ版保存の失敗分岐。
+func TestStoreInsertExperimentBriefVersionFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func(*testing.T)
+		tx      *fakeBriefingTransaction
+		want    string
+	}{
+		{
+			name: "識別子生成失敗を返す",
+			prepare: func(t *testing.T) {
+				t.Helper()
+				replaceBriefingRandom(t, func([]byte) (int, error) {
+					return 0, errors.New("random unavailable")
+				})
+			},
+			tx:   &fakeBriefingTransaction{},
+			want: "generate briefing version identifier",
+		},
+		{
+			name:    "版番号取得失敗を返す",
+			prepare: func(*testing.T) {},
+			tx:      &fakeBriefingTransaction{rows: []briefingRow{fakeBriefingRow{err: errors.New("version unavailable")}}},
+			want:    "find next briefing version",
+		},
+		{
+			name:    "版保存失敗を返す",
+			prepare: func(*testing.T) {},
+			tx: &fakeBriefingTransaction{
+				rows:       []briefingRow{fakeBriefingRow{values: []any{1}}},
+				execErrors: []error{errors.New("insert unavailable")},
+			},
+			want: "insert briefing version",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.prepare(t)
+
+			err := (&Store{}).insertExperimentBriefVersion(context.Background(), tt.tx, "session-1", domain.ExperimentBrief{Decision: "判断"}, "2026-08-09T00:00:00Z")
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("insertExperimentBriefVersion() error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// SQLite実験ブリーフ会話送信失敗保存の分岐。
+func TestStoreFailExperimentBriefMessage(t *testing.T) {
+	tests := []struct {
+		name   string
+		result sql.Result
+		err    error
+		want   string
+	}{
+		{
+			name: "更新失敗を返す",
+			err:  errors.New("update unavailable"),
+			want: "fail briefing message operation",
+		},
+		{
+			name: "更新件数取得失敗を返す",
+			result: fakeBriefingResult{
+				rowsAffectedError: errors.New("count unavailable"),
+			},
+			want: "count failed briefing message operations",
+		},
+		{
+			name: "operation不在を返す",
+			result: fakeBriefingResult{
+				rowsAffected: 0,
+			},
+			want: "request not found",
+		},
+		{
+			name: "失敗状態を保存する",
+			result: fakeBriefingResult{
+				rowsAffected: 1,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &Store{failBriefingMessageOperation: func(context.Context, string, string) (sql.Result, error) {
+				return tt.result, tt.err
+			}}
+
+			err := store.FailExperimentBriefMessage(context.Background(), "request-1", "ACP_NOT_READY")
+			if tt.want == "" {
+				if err != nil {
+					t.Errorf("FailExperimentBriefMessage() error = %v, want nil", err)
+				}
+
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("FailExperimentBriefMessage() error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
 // SQLite実験ブリーフ再読込の保存内容取得。
 func TestStoreGetExperimentBriefing(t *testing.T) {
 	store, err := Open(t.TempDir())
@@ -973,6 +1597,8 @@ type fakeBriefingTransaction struct {
 	results     []sql.Result
 	commitError error
 	onExec      func(int)
+	rows        []briefingRow
+	rowCalls    int
 }
 
 // ExecContext は指定済みの実行結果を返却。
@@ -995,6 +1621,52 @@ func (f *fakeBriefingTransaction) ExecContext(context.Context, string, ...any) (
 	}
 
 	return fakeBriefingResult{rowsAffected: 1}, nil
+}
+
+// QueryRowContext はこのtest doubleで未使用の行を返却。
+func (f *fakeBriefingTransaction) QueryRowContext(context.Context, string, ...any) briefingRow {
+	f.rowCalls++
+	if f.rowCalls <= len(f.rows) {
+		return f.rows[f.rowCalls-1]
+	}
+
+	return fakeBriefingRow{err: errors.New("unexpected query row")}
+}
+
+// fakeBriefingRow は単一行読込のtest double。
+type fakeBriefingRow struct {
+	values []any
+	err    error
+}
+
+// Scan は指定済みの単一行値をコピー。
+func (f fakeBriefingRow) Scan(destinations ...any) error {
+	if f.err != nil {
+		return f.err
+	}
+	for index, destination := range destinations {
+		if index >= len(f.values) {
+			return errors.New("missing fake row value")
+		}
+		switch target := destination.(type) {
+		case *string:
+			value, ok := f.values[index].(string)
+			if !ok {
+				return errors.New("fake row string conversion failed")
+			}
+			*target = value
+		case *int:
+			value, ok := f.values[index].(int)
+			if !ok {
+				return errors.New("fake row int conversion failed")
+			}
+			*target = value
+		default:
+			return errors.New("unsupported fake row destination")
+		}
+	}
+
+	return nil
 }
 
 // Commit は指定済みの確定結果を返却。

@@ -9,8 +9,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/yukihito-jokyu/context-lab/internal/domain"
 	"github.com/yukihito-jokyu/context-lab/migrations"
 	_ "modernc.org/sqlite"
 )
@@ -27,8 +29,10 @@ var readMigrationDirectory = func() ([]fs.DirEntry, error) {
 
 // Store はSQLiteの実験読み出しadapter。
 type Store struct {
-	db                       *sql.DB
-	beginBriefingTransaction func(context.Context) (briefingTransaction, error)
+	db                           *sql.DB
+	beginBriefingTransaction     func(context.Context) (briefingTransaction, error)
+	failBriefingMessageOperation func(context.Context, string, string) (sql.Result, error)
+	briefingMessageMu            sync.Mutex
 }
 
 // Open は管理ディレクトリとSQLiteスキーマを初期化。
@@ -45,7 +49,15 @@ func Open(dataDirectory string) (*Store, error) {
 	store := &Store{
 		db: db,
 		beginBriefingTransaction: func(ctx context.Context) (briefingTransaction, error) {
-			return db.BeginTx(ctx, nil)
+			tx, err := db.BeginTx(ctx, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			return sqliteBriefingTransaction{tx: tx}, nil
+		},
+		failBriefingMessageOperation: func(ctx context.Context, requestID, failureCode string) (sql.Result, error) {
+			return db.ExecContext(ctx, "UPDATE briefing_message_operations SET state = ?, failure_code = ? WHERE request_id = ?", domain.BriefingStartStateFailed, failureCode, requestID)
 		},
 	}
 	if err := store.migrate(context.Background()); err != nil {

@@ -38,7 +38,7 @@ func TestExperimentBriefingsHandlerStartExperimentBriefing(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &handlerBriefingStore{beginErr: tt.storeErr}
-			handler := NewExperimentBriefingsHandler(usecase.NewStartExperimentBriefing(store, handlerBriefingStarter{}), usecase.NewGetExperimentBriefing(store), newTestLogger())
+			handler := NewExperimentBriefingsHandler(usecase.NewStartExperimentBriefing(store, handlerBriefingStarter{}), usecase.NewSendExperimentBriefMessage(store, handlerBriefingMessageSender{}), usecase.NewGetExperimentBriefing(store), newTestLogger())
 
 			got := handler.StartExperimentBriefing(tt.requestID)
 			if tt.wantCode != "" {
@@ -65,6 +65,77 @@ func TestExperimentBriefingsHandlerStartExperimentBriefing(t *testing.T) {
 			}
 			if got.Data.OperationID != "operation-1" {
 				t.Errorf("OperationID = %q, want %q", got.Data.OperationID, "operation-1")
+			}
+		})
+	}
+}
+
+// Wails実験ブリーフ会話送信の成功返却。
+func TestExperimentBriefingsHandlerSendExperimentBriefMessage(t *testing.T) {
+	store := &handlerBriefingStore{}
+	handler := NewExperimentBriefingsHandler(
+		usecase.NewStartExperimentBriefing(store, handlerBriefingStarter{}),
+		usecase.NewSendExperimentBriefMessage(store, handlerBriefingMessageSender{}),
+		usecase.NewGetExperimentBriefing(store),
+		newTestLogger(),
+	)
+
+	got := handler.SendExperimentBriefMessage("request-1", "session-1", "目的を確認したい")
+	if got.Error != nil {
+		t.Fatalf("Error = %+v, want nil", got.Error)
+	}
+	if got.Data == nil {
+		t.Fatal("Data = nil, want operation identifier")
+	}
+	if got := got.Data.OperationID; got != "message-operation-1" {
+		t.Errorf("OperationID = %q, want %q", got, "message-operation-1")
+	}
+}
+
+// Wails実験ブリーフ会話送信の安全な失敗返却。
+func TestExperimentBriefingsHandlerSendExperimentBriefMessageFailure(t *testing.T) {
+	store := &handlerBriefingStore{}
+	handler := NewExperimentBriefingsHandler(
+		usecase.NewStartExperimentBriefing(store, handlerBriefingStarter{}),
+		usecase.NewSendExperimentBriefMessage(store, handlerBriefingMessageSender{err: errors.New("private ACP credential")}),
+		usecase.NewGetExperimentBriefing(store),
+		newTestLogger(),
+	)
+
+	got := handler.SendExperimentBriefMessage("request-1", "session-1", "目的を確認したい")
+	if got.Data != nil {
+		t.Errorf("Data = %+v, want nil", got.Data)
+	}
+	if got.Error == nil {
+		t.Fatal("Error = nil, want safe error")
+	}
+	if got.Error.Code != string(apperr.CodeBriefingMessageFailed) {
+		t.Errorf("Error.Code = %q, want %q", got.Error.Code, apperr.CodeBriefingMessageFailed)
+	}
+}
+
+// 実験ブリーフ会話送信失敗の安全な変換。
+func TestFailSendExperimentBriefMessage(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantCode apperr.Code
+	}{
+		{
+			name:     "通常エラーを想定外エラーへ変換する",
+			err:      errors.New("private ACP credential"),
+			wantCode: apperr.CodeUnexpected,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := failSendExperimentBriefMessage(tt.err)
+			if got.Error == nil {
+				t.Fatal("Error = nil, want safe error")
+			}
+			if got.Error.Code != string(tt.wantCode) {
+				t.Errorf("Error.Code = %q, want %q", got.Error.Code, tt.wantCode)
 			}
 		})
 	}
@@ -195,6 +266,7 @@ func TestExperimentBriefingsHandlerGetExperimentBriefing(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			handler := NewExperimentBriefingsHandler(
 				usecase.NewStartExperimentBriefing(&tt.store, handlerBriefingStarter{}),
+				usecase.NewSendExperimentBriefMessage(&tt.store, handlerBriefingMessageSender{}),
 				usecase.NewGetExperimentBriefing(&tt.store),
 				newTestLogger(),
 			)
@@ -275,12 +347,42 @@ func (*handlerBriefingStore) MarkExperimentBriefingFailed(context.Context, strin
 	return nil
 }
 
+// BeginExperimentBriefMessage は指定済み送信結果を返却。
+func (*handlerBriefingStore) BeginExperimentBriefMessage(_ context.Context, requestID, briefingSessionID string) (domain.ExperimentBriefingMessageOperation, bool, error) {
+	return domain.ExperimentBriefingMessageOperation{
+		RequestID:         requestID,
+		BriefingSessionID: briefingSessionID,
+		OperationID:       "message-operation-1",
+		State:             domain.BriefingStartStateStarting,
+	}, true, nil
+}
+
+// CompleteExperimentBriefMessage は送信結果を受理。
+func (*handlerBriefingStore) CompleteExperimentBriefMessage(context.Context, string, string, domain.ExperimentBriefingMessageResult) error {
+	return nil
+}
+
+// FailExperimentBriefMessage は送信失敗を受理。
+func (*handlerBriefingStore) FailExperimentBriefMessage(context.Context, string, string) error {
+	return nil
+}
+
 // handlerBriefingStarter はhandler用外部開始portのtest double。
 type handlerBriefingStarter struct{}
 
 // StartExperimentBriefing は開始を受理。
 func (handlerBriefingStarter) StartExperimentBriefing(context.Context, string, string) error {
 	return nil
+}
+
+// handlerBriefingMessageSender はhandler用会話送信portのtest double。
+type handlerBriefingMessageSender struct {
+	err error
+}
+
+// SendExperimentBriefMessage は安全な応答を返却。
+func (s handlerBriefingMessageSender) SendExperimentBriefMessage(context.Context, string, string, string) (domain.ExperimentBriefingMessageResult, error) {
+	return domain.ExperimentBriefingMessageResult{}, s.err
 }
 
 // ListExperimentsの成功と安全な失敗返却。

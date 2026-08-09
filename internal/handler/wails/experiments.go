@@ -23,20 +23,62 @@ type StartExperimentBriefingData struct {
 	OperationID       string `json:"operationId"`
 }
 
+// SendExperimentBriefMessageResponse は実験ブリーフ会話送信の成功または失敗結果。
+type SendExperimentBriefMessageResponse struct {
+	Data  *SendExperimentBriefMessageData `json:"data,omitempty"`
+	Error *ErrorResponse                  `json:"error,omitempty"`
+}
+
+// SendExperimentBriefMessageData は画面へ返す送信操作識別子。
+type SendExperimentBriefMessageData struct {
+	OperationID string `json:"operationId"`
+}
+
 // ExperimentBriefingsHandler は実験ブリーフ開始のWails binding。
 type ExperimentBriefingsHandler struct {
-	startExperimentBriefing *usecase.StartExperimentBriefing
-	getExperimentBriefing   *usecase.GetExperimentBriefing
-	logger                  logger.Logger
+	startExperimentBriefing    *usecase.StartExperimentBriefing
+	sendExperimentBriefMessage *usecase.SendExperimentBriefMessage
+	getExperimentBriefing      *usecase.GetExperimentBriefing
+	logger                     logger.Logger
 }
 
 // NewExperimentBriefingsHandler は実験ブリーフ開始bindingを生成。
-func NewExperimentBriefingsHandler(startExperimentBriefing *usecase.StartExperimentBriefing, getExperimentBriefing *usecase.GetExperimentBriefing, appLogger logger.Logger) *ExperimentBriefingsHandler {
+func NewExperimentBriefingsHandler(startExperimentBriefing *usecase.StartExperimentBriefing, sendExperimentBriefMessage *usecase.SendExperimentBriefMessage, getExperimentBriefing *usecase.GetExperimentBriefing, appLogger logger.Logger) *ExperimentBriefingsHandler {
 	return &ExperimentBriefingsHandler{
-		startExperimentBriefing: startExperimentBriefing,
-		getExperimentBriefing:   getExperimentBriefing,
-		logger:                  appLogger,
+		startExperimentBriefing:    startExperimentBriefing,
+		sendExperimentBriefMessage: sendExperimentBriefMessage,
+		getExperimentBriefing:      getExperimentBriefing,
+		logger:                     appLogger,
 	}
+}
+
+// SendExperimentBriefMessage は実験ブリーフ会話送信を画面向けDTOで返す。
+func (h *ExperimentBriefingsHandler) SendExperimentBriefMessage(requestID, briefingSessionID, message string) SendExperimentBriefMessageResponse {
+	ctx := context.Background()
+	h.logger.Info(ctx, "send experiment brief message called")
+
+	operation, err := h.sendExperimentBriefMessage.Execute(ctx, requestID, briefingSessionID, message)
+	if err != nil {
+		response := failSendExperimentBriefMessage(err)
+		h.logger.ErrorCode(ctx, "send experiment brief message failed", response.Error.Code, slog.String("operation", "send_experiment_brief_message"))
+
+		return response
+	}
+
+	return SendExperimentBriefMessageResponse{Data: &SendExperimentBriefMessageData{OperationID: operation.OperationID}}
+}
+
+// failSendExperimentBriefMessage は内部エラーを安全な画面エラーへ変換。
+func failSendExperimentBriefMessage(err error) SendExperimentBriefMessageResponse {
+	appErr := apperr.As(err)
+	if appErr == nil {
+		appErr = apperr.NewUnexpected(err)
+	}
+
+	return SendExperimentBriefMessageResponse{Error: &ErrorResponse{
+		Code:    string(appErr.Code),
+		Message: appErr.Error(),
+	}}
 }
 
 // GetExperimentBriefingResponse は実験ブリーフ再読込の成功または失敗結果。

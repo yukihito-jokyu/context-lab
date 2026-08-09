@@ -17,6 +17,21 @@ type ExperimentBriefingStart struct {
 	FailureCode       string
 }
 
+// ExperimentBriefingMessageOperation は実験ブリーフ会話送信の永続的な結果。
+type ExperimentBriefingMessageOperation struct {
+	RequestID         string
+	BriefingSessionID string
+	OperationID       string
+	State             string
+	FailureCode       string
+}
+
+// ExperimentBriefingMessageResult はACPから受け取る安全な会話と下書き候補。
+type ExperimentBriefingMessageResult struct {
+	AssistantMessage string
+	Brief            *ExperimentBrief
+}
+
 // ExperimentBriefing は実験ブリーフ画面の再表示に必要な永続状態。
 type ExperimentBriefing struct {
 	State           string
