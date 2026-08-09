@@ -4,6 +4,7 @@ type ListExperimentsResponse = Record<string, unknown>;
 type StartExperimentBriefingResponse = Record<string, unknown>;
 type GetExperimentBriefingResponse = Record<string, unknown>;
 type SendExperimentBriefMessageResponse = Record<string, unknown>;
+type CreateExperimentFromBriefResponse = Record<string, unknown>;
 
 declare global {
   interface Window {
@@ -14,6 +15,11 @@ declare global {
       message: string;
     }>;
     __briefingRequestIds: string[];
+    __createExperimentRequests: Array<{
+      requestId: string;
+      briefingSessionId: string;
+      briefVersionId: string;
+    }>;
   }
 }
 
@@ -77,19 +83,23 @@ async function installExperimentBriefingMock(
   responses: StartExperimentBriefingResponse[],
   briefingResponses: GetExperimentBriefingResponse[] = [],
   messageResponses: SendExperimentBriefMessageResponse[] = [],
+  createResponses: CreateExperimentFromBriefResponse[] = [],
 ) {
   await page.addInitScript({
     content: `
       const responses = ${JSON.stringify(responses)};
       const briefingResponses = ${JSON.stringify(briefingResponses)};
       const messageResponses = ${JSON.stringify(messageResponses)};
+      const createResponses = ${JSON.stringify(createResponses)};
       let callCount = 0;
       let briefingCallCount = 0;
       let messageCallCount = 0;
+      let createCallCount = 0;
       window.go = window.go || { wails: {} };
       window.__briefingRequestIds = [];
       window.__briefingMessageRequests = [];
       window.__briefingGetCallCount = 0;
+      window.__createExperimentRequests = [];
       window.go.wails.ExperimentBriefingsHandler = {
         StartExperimentBriefing: (requestId) => {
           window.__briefingRequestIds.push(requestId);
@@ -112,6 +122,17 @@ async function installExperimentBriefingMock(
           window.__briefingMessageRequests.push({ requestId, briefingSessionId, message });
           const response = messageResponses[Math.min(messageCallCount, messageResponses.length - 1)];
           messageCallCount += 1;
+          if (response.delayMs) {
+            return new Promise((resolve) => {
+              window.setTimeout(() => resolve(response.result), response.delayMs);
+            });
+          }
+          return Promise.resolve(response);
+        },
+        CreateExperimentFromBrief: (requestId, briefingSessionId, briefVersionId) => {
+          window.__createExperimentRequests.push({ requestId, briefingSessionId, briefVersionId });
+          const response = createResponses[Math.min(createCallCount, createResponses.length - 1)];
+          createCallCount += 1;
           if (response.delayMs) {
             return new Promise((resolve) => {
               window.setTimeout(() => resolve(response.result), response.delayMs);
@@ -456,4 +477,105 @@ test("前のセッションの遅延応答で再開始後の会話を上書き�
   await expect(page.locator("#briefing-chat-log")).not.toContainText(
     "古い会話",
   );
+});
+
+const completeBriefResponse = {
+  data: {
+    state: "active",
+    messages: [
+      {
+        role: "assistant",
+        content: "このブリーフを確認してください。",
+        sequenceNo: 1,
+        createdAt: confirmedAt,
+      },
+    ],
+    latestBrief: {
+      versionId: "brief-complete-v1",
+      purpose: "問い合わせ要約の品質を比較する",
+      candidatePrompts: ["短く要約する", "根拠を保って要約する"],
+      evaluationAxes: "正確性、要点保持",
+      environmentConditions: "同じ入力と評価手順を用いる",
+    },
+    lastConfirmedAt: confirmedAt,
+  },
+};
+
+test("完全なブリーフを採用して準備画面へ遷移する", async ({ page }) => {
+  await installListExperimentsMock(page, [successResponse]);
+  await installExperimentBriefingMock(
+    page,
+    [{ data: { briefingSessionId: "briefing-1", operationId: "operation-1" } }],
+    [completeBriefResponse],
+    [],
+    [{ data: { experimentId: "EXP-015", state: "preparing" } }],
+  );
+  await page.goto("/");
+
+  await page.locator("#new-experiment-button").click();
+  await page.locator("#submit-create-experiment-button").click();
+  await expect(page).toHaveURL(/\/experiments\/EXP-015\/preparation$/);
+});
+
+test("採用失敗時はブリーフと会話を維持して再試行できる", async ({ page }) => {
+  await installListExperimentsMock(page, [successResponse]);
+  await installExperimentBriefingMock(
+    page,
+    [{ data: { briefingSessionId: "briefing-1", operationId: "operation-1" } }],
+    [completeBriefResponse],
+    [],
+    [
+      {
+        error: { code: "UNAVAILABLE", message: "実験を作成できませんでした。" },
+      },
+      {
+        error: { code: "UNAVAILABLE", message: "実験を作成できませんでした。" },
+      },
+    ],
+  );
+  await page.goto("/");
+
+  await page.locator("#new-experiment-button").click();
+  await page.locator("#submit-create-experiment-button").click();
+  await expect(page.locator("#create-experiment-command-error")).toContainText(
+    "実験を作成できませんでした。",
+  );
+  await expect(page.locator("#briefing-chat-log")).toContainText(
+    "このブリーフを確認してください。",
+  );
+  await expect(page.getByText("問い合わせ要約の品質を比較する")).toBeVisible();
+  await page.locator("#submit-create-experiment-button").click();
+  await expect
+    .poll(() => page.evaluate(() => window.__createExperimentRequests.length))
+    .toBe(2);
+});
+
+test("採用操作の二重実行を抑止する", async ({ page }) => {
+  await installListExperimentsMock(page, [successResponse]);
+  await installExperimentBriefingMock(
+    page,
+    [{ data: { briefingSessionId: "briefing-1", operationId: "operation-1" } }],
+    [completeBriefResponse],
+    [],
+    [
+      {
+        delayMs: 200,
+        result: {
+          error: {
+            code: "UNAVAILABLE",
+            message: "実験を作成できませんでした。",
+          },
+        },
+      },
+    ],
+  );
+  await page.goto("/");
+
+  await page.locator("#new-experiment-button").click();
+  await page.locator("#submit-create-experiment-button").dblclick();
+  await expect(page.locator("#create-experiment-pending")).toBeVisible();
+  await expect(page.locator("#submit-create-experiment-button")).toBeDisabled();
+  await expect
+    .poll(() => page.evaluate(() => window.__createExperimentRequests.length))
+    .toBe(1);
 });
