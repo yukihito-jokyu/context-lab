@@ -2130,13 +2130,27 @@ func (f *fakeBriefingTransaction) ExecContext(context.Context, string, ...any) (
 }
 
 // QueryRowContext はこのtest doubleで未使用の行を返却。
-func (f *fakeBriefingTransaction) QueryRowContext(context.Context, string, ...any) briefingRow {
+func (f *fakeBriefingTransaction) QueryRowContext(_ context.Context, query string, _ ...any) briefingRow {
+	if strings.Contains(query, "FROM preparation_sessions WHERE id = ? AND kind = ?") && f.usesExperimentBriefingRow() {
+		return fakeBriefingRow{values: []any{domain.BriefingStartStateStarted}}
+	}
+
 	f.rowCalls++
 	if f.rowCalls <= len(f.rows) {
 		return f.rows[f.rowCalls-1]
 	}
 
 	return fakeBriefingRow{err: errors.New("unexpected query row")}
+}
+
+// usesExperimentBriefingRow は採用用のブリーフ行を識別する。
+func (f *fakeBriefingTransaction) usesExperimentBriefingRow() bool {
+	if len(f.rows) == 0 {
+		return false
+	}
+	row, ok := f.rows[0].(fakeBriefingRow)
+
+	return ok && (len(row.values) > 1 || (row.err != nil && strings.Contains(row.err.Error(), "version")))
 }
 
 // fakeBriefingRow は単一行読込のtest double。
@@ -2275,6 +2289,436 @@ func TestStoreMarkExperimentBriefing(t *testing.T) {
 	}
 }
 
+// SQLite実験ブリーフ停止の永続化と冪等性。
+func TestStoreStopExperimentBriefing(t *testing.T) {
+	tests := []struct {
+		name         string
+		requestID    string
+		sessionID    string
+		sessionState string
+		wantCode     apperr.Code
+	}{
+		{
+			name:         "停止意図を保存して停止済みを返す",
+			requestID:    "request-1",
+			sessionID:    "session-1",
+			sessionState: domain.BriefingStartStateStarted,
+		},
+		{
+			name:         "非active sessionを拒否する",
+			requestID:    "request-2",
+			sessionID:    "session-1",
+			sessionState: domain.BriefingStartStateStopped,
+			wantCode:     apperr.CodeBriefingNotActive,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store, err := Open(t.TempDir())
+			if err != nil {
+				t.Fatalf("Open() error = %v", err)
+			}
+			t.Cleanup(func() {
+				if err := store.Close(); err != nil {
+					t.Errorf("Close() error = %v", err)
+				}
+			})
+			createdAt := time.Now().UTC().Format(time.RFC3339Nano)
+			if _, err := store.db.Exec("INSERT INTO preparation_sessions (id, kind, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", tt.sessionID, "experiment_brief", tt.sessionState, createdAt, createdAt); err != nil {
+				t.Fatalf("insert preparation session error = %v", err)
+			}
+
+			operation, created, err := store.BeginStopExperimentBriefing(context.Background(), tt.requestID, tt.sessionID)
+			if tt.wantCode != "" {
+				appErr := apperr.As(err)
+				if appErr == nil {
+					t.Fatal("apperr.As(error) = nil, want app error")
+				}
+				if appErr.Code != tt.wantCode {
+					t.Errorf("Code = %q, want %q", appErr.Code, tt.wantCode)
+				}
+
+				return
+			}
+			if err != nil {
+				t.Fatalf("BeginStopExperimentBriefing() error = %v", err)
+			}
+			if !created {
+				t.Error("created = false, want true")
+			}
+			if operation.OperationID == "" {
+				t.Error("OperationID = empty, want identifier")
+			}
+			if err := store.CompleteStopExperimentBriefing(context.Background(), tt.requestID); err != nil {
+				t.Fatalf("CompleteStopExperimentBriefing() error = %v", err)
+			}
+			briefing, found, err := store.GetExperimentBriefing(context.Background(), tt.sessionID)
+			if err != nil {
+				t.Fatalf("GetExperimentBriefing() error = %v", err)
+			}
+			if !found {
+				t.Fatal("found = false, want true")
+			}
+			if briefing.State != domain.BriefingStartStateStopped {
+				t.Errorf("State = %q, want %q", briefing.State, domain.BriefingStartStateStopped)
+			}
+			second, secondCreated, err := store.BeginStopExperimentBriefing(context.Background(), tt.requestID, tt.sessionID)
+			if err != nil {
+				t.Fatalf("second BeginStopExperimentBriefing() error = %v", err)
+			}
+			if secondCreated {
+				t.Error("second created = true, want false")
+			}
+			if second.OperationID != operation.OperationID {
+				t.Errorf("second OperationID = %q, want %q", second.OperationID, operation.OperationID)
+			}
+		})
+	}
+}
+
+// SQLite実験ブリーフ停止のrepository失敗境界。
+func TestStoreStopExperimentBriefingFailures(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(*testing.T, *Store) error
+	}{
+		{
+			name: "停止操作検索失敗",
+			run: func(_ *testing.T, store *Store) error {
+				if err := store.db.Close(); err != nil {
+					return err
+				}
+				_, _, err := store.BeginStopExperimentBriefing(context.Background(), "request-1", "session-1")
+
+				return err
+			},
+		},
+		{
+			name: "停止識別子生成失敗",
+			run: func(t *testing.T, store *Store) error {
+				replaceBriefingRandom(t, func([]byte) (int, error) { return 0, errors.New("random") })
+				_, _, err := store.BeginStopExperimentBriefing(context.Background(), "request-1", "session-1")
+
+				return err
+			},
+		},
+		{
+			name: "停止transaction開始失敗",
+			run: func(_ *testing.T, store *Store) error {
+				store.beginBriefingTransaction = func(context.Context) (briefingTransaction, error) { return nil, errors.New("begin") }
+				_, _, err := store.BeginStopExperimentBriefing(context.Background(), "request-1", "session-1")
+
+				return err
+			},
+		},
+		{
+			name: "停止session検索失敗",
+			run: func(_ *testing.T, store *Store) error {
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(&fakeBriefingTransaction{rows: []briefingRow{fakeBriefingRow{err: errors.New("session")}}})
+				_, _, err := store.BeginStopExperimentBriefing(context.Background(), "request-1", "session-1")
+
+				return err
+			},
+		},
+		{
+			name: "停止非active session",
+			run: func(_ *testing.T, store *Store) error {
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(&fakeBriefingTransaction{
+					rows: []briefingRow{
+						fakeBriefingRow{values: []any{domain.BriefingStartStateFailed}},
+					},
+				})
+				_, _, err := store.BeginStopExperimentBriefing(context.Background(), "request-1", "session-1")
+
+				return err
+			},
+		},
+		{
+			name: "停止operation保存失敗",
+			run: func(_ *testing.T, store *Store) error {
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(&fakeBriefingTransaction{
+					execErrors: []error{
+						errors.New("insert"),
+					},
+					rows: []briefingRow{
+						fakeBriefingRow{values: []any{domain.BriefingStartStateStarted}},
+					},
+				})
+				_, _, err := store.BeginStopExperimentBriefing(context.Background(), "request-1", "session-1")
+
+				return err
+			},
+		},
+		{
+			name: "停止確定失敗",
+			run: func(_ *testing.T, store *Store) error {
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(&fakeBriefingTransaction{
+					commitError: errors.New("commit"),
+					rows: []briefingRow{
+						fakeBriefingRow{values: []any{domain.BriefingStartStateStarted}},
+					},
+				})
+				_, _, err := store.BeginStopExperimentBriefing(context.Background(), "request-1", "session-1")
+
+				return err
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newTestStore(t)
+			if err := tt.run(t, store); err == nil {
+				t.Fatal("run() error = nil, want error")
+			}
+		})
+	}
+	if !isBriefingStopRequestConflict(errors.New("UNIQUE constraint failed: briefing_stop_operations.request_id")) {
+		t.Error("isBriefingStopRequestConflict() = false, want true")
+	}
+	if isBriefingStopRequestConflict(errors.New("other")) {
+		t.Error("isBriefingStopRequestConflict() = true, want false")
+	}
+}
+
+// SQLite実験ブリーフ停止の冪等競合境界。
+func TestStoreBeginStopExperimentBriefingConflictBoundaries(t *testing.T) {
+	tests := []struct {
+		name      string
+		prepare   func(*testing.T, *Store)
+		wantCode  apperr.Code
+		wantFound bool
+	}{
+		{
+			name: "既存requestの別sessionを拒否する",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				if _, err := store.db.Exec("INSERT INTO briefing_stop_operations (id, request_id, preparation_session_id, state) VALUES (?, ?, ?, ?)", "operation-1", "request-1", "other-session", domain.BriefingStartStateStarting); err != nil {
+					t.Fatalf("insert stop operation error = %v", err)
+				}
+			},
+			wantCode: apperr.CodeBriefingRequestInvalid,
+		},
+		{
+			name: "session不在を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(&fakeBriefingTransaction{
+					rows: []briefingRow{
+						fakeBriefingRow{err: sql.ErrNoRows},
+					},
+				})
+			},
+			wantCode: apperr.CodeBriefingNotFound,
+		},
+		{
+			name: "競合後の同一session操作を再利用する",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				transaction := &fakeBriefingTransaction{
+					execErrors: []error{
+						errors.New("UNIQUE constraint failed: briefing_stop_operations.request_id"),
+					},
+					rows: []briefingRow{
+						fakeBriefingRow{values: []any{domain.BriefingStartStateStarted}},
+					},
+					onExec: func(int) {
+						if _, err := store.db.Exec("INSERT INTO briefing_stop_operations (id, request_id, preparation_session_id, state) VALUES (?, ?, ?, ?)", "operation-1", "request-1", "session-1", domain.BriefingStartStateStarting); err != nil {
+							t.Fatalf("insert conflicting stop operation error = %v", err)
+						}
+					},
+				}
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(transaction)
+			},
+			wantFound: true,
+		},
+		{
+			name: "競合後に操作が見つからない場合を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(&fakeBriefingTransaction{
+					execErrors: []error{
+						errors.New("UNIQUE constraint failed: briefing_stop_operations.request_id"),
+					},
+					rows: []briefingRow{
+						fakeBriefingRow{values: []any{domain.BriefingStartStateStarted}},
+					},
+				})
+			},
+		},
+		{
+			name: "競合後の操作検索失敗を返す",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				transaction := &fakeBriefingTransaction{
+					execErrors: []error{
+						errors.New("UNIQUE constraint failed: briefing_stop_operations.request_id"),
+					},
+					rows: []briefingRow{
+						fakeBriefingRow{values: []any{domain.BriefingStartStateStarted}},
+					},
+					onExec: func(int) {
+						if err := store.db.Close(); err != nil {
+							t.Fatalf("Close() error = %v", err)
+						}
+					},
+				}
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(transaction)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newTestStore(t)
+			tt.prepare(t, store)
+
+			operation, created, err := store.BeginStopExperimentBriefing(context.Background(), "request-1", "session-1")
+			if tt.wantCode != "" {
+				if !apperr.IsCode(err, tt.wantCode) {
+					t.Errorf("BeginStopExperimentBriefing() error = %v, want %q", err, tt.wantCode)
+				}
+
+				return
+			}
+			if tt.wantFound {
+				if err != nil {
+					t.Fatalf("BeginStopExperimentBriefing() error = %v", err)
+				}
+				if created {
+					t.Error("created = true, want false")
+				}
+				if operation.OperationID != "operation-1" {
+					t.Errorf("OperationID = %q, want %q", operation.OperationID, "operation-1")
+				}
+
+				return
+			}
+			if err == nil {
+				t.Error("BeginStopExperimentBriefing() error = nil, want error")
+			}
+		})
+	}
+}
+
+// SQLite実験ブリーフ停止状態同期の保存失敗。
+func TestStoreUpdateStopExperimentBriefingFailures(t *testing.T) {
+	tests := []struct {
+		name  string
+		state string
+		tx    *fakeBriefingTransaction
+		want  string
+	}{
+		{
+			name: "transaction開始失敗を返す",
+			want: "begin briefing stop update",
+		},
+		{
+			name: "停止operation更新失敗を返す",
+			tx: &fakeBriefingTransaction{
+				execErrors: []error{
+					errors.New("operation update failed"),
+				},
+			},
+			want: "update briefing stop operation",
+		},
+		{
+			name: "停止operation更新件数取得失敗を返す",
+			tx: &fakeBriefingTransaction{
+				result: fakeBriefingResult{rowsAffectedError: errors.New("count failed")},
+			},
+			want: "count briefing stop operation updates",
+		},
+		{
+			name: "停止operation不在を返す",
+			tx: &fakeBriefingTransaction{
+				result: fakeBriefingResult{rowsAffected: 0},
+			},
+			want: "request not found",
+		},
+		{
+			name:  "停止session更新失敗を返す",
+			state: domain.BriefingStartStateStopped,
+			tx: &fakeBriefingTransaction{
+				execErrors: []error{
+					nil,
+					errors.New("session update failed"),
+				},
+			},
+			want: "update stopped briefing session",
+		},
+		{
+			name:  "停止session更新件数取得失敗を返す",
+			state: domain.BriefingStartStateStopped,
+			tx: &fakeBriefingTransaction{
+				results: []sql.Result{
+					fakeBriefingResult{rowsAffected: 1},
+					fakeBriefingResult{rowsAffectedError: errors.New("session count failed")},
+				},
+			},
+			want: "count stopped briefing session updates",
+		},
+		{
+			name:  "停止session不在を返す",
+			state: domain.BriefingStartStateStopped,
+			tx: &fakeBriefingTransaction{
+				results: []sql.Result{
+					fakeBriefingResult{rowsAffected: 1},
+					fakeBriefingResult{rowsAffected: 0},
+				},
+			},
+			want: "session not found",
+		},
+		{
+			name: "停止状態同期確定失敗を返す",
+			tx: &fakeBriefingTransaction{
+				commitError: errors.New("commit failed"),
+			},
+			want: "commit briefing stop update",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newTestStore(t)
+			if tt.tx == nil {
+				store.beginBriefingTransaction = func(context.Context) (briefingTransaction, error) {
+					return nil, errors.New("begin failed")
+				}
+			} else {
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(tt.tx)
+			}
+
+			state := tt.state
+			if state == "" {
+				state = domain.BriefingStartStateStopped
+			}
+			err := store.updateStopExperimentBriefing(context.Background(), "request-1", state, "failure")
+			if err == nil {
+				t.Fatal("updateStopExperimentBriefing() error = nil, want error")
+			}
+			if got := err.Error(); !strings.Contains(got, tt.want) {
+				t.Errorf("updateStopExperimentBriefing() error = %q, want to contain %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// SQLite実験ブリーフ停止失敗の保存。
+func TestStoreFailStopExperimentBriefing(t *testing.T) {
+	store := newTestStore(t)
+	createdAt := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := store.db.Exec("INSERT INTO preparation_sessions (id, kind, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", "session-1", "experiment_brief", domain.BriefingStartStateStarted, createdAt, createdAt); err != nil {
+		t.Fatalf("insert preparation session error = %v", err)
+	}
+	if _, _, err := store.BeginStopExperimentBriefing(context.Background(), "request-1", "session-1"); err != nil {
+		t.Fatalf("BeginStopExperimentBriefing() error = %v", err)
+	}
+	if err := store.FailStopExperimentBriefing(context.Background(), "request-1", string(apperr.CodeACPNotReady)); err != nil {
+		t.Fatalf("FailStopExperimentBriefing() error = %v", err)
+	}
+}
+
 // SQLite初期化と実験一覧読み出し。
 func TestStoreListExperiments(t *testing.T) {
 	tests := []struct {
@@ -2397,6 +2841,33 @@ func TestStoreListExperimentsErrors(t *testing.T) {
 				t.Error("ListExperiments() error = nil, want repository error")
 			}
 		})
+	}
+}
+
+// 同時の一覧確認は確認時刻の書込みを直列化する。
+func TestStoreListExperimentsSerializesConcurrentConfirmation(t *testing.T) {
+	store := newTestStore(t)
+	store.listMu.Lock()
+	result := make(chan error, 1)
+	go func() {
+		_, err := store.ListExperiments(context.Background())
+		result <- err
+	}()
+
+	select {
+	case err := <-result:
+		t.Fatalf("ListExperiments() completed while locked: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	store.listMu.Unlock()
+
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("ListExperiments() error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("ListExperiments() did not complete after unlock")
 	}
 }
 

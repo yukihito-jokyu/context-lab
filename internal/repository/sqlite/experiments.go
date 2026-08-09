@@ -174,6 +174,144 @@ func (s *Store) BeginExperimentBriefMessage(ctx context.Context, requestID, brie
 	return operation, true, nil
 }
 
+// BeginStopExperimentBriefing は停止意図を原子的に保存する。
+func (s *Store) BeginStopExperimentBriefing(ctx context.Context, requestID, briefingSessionID string) (domain.ExperimentBriefingStopOperation, bool, error) {
+	existing, found, err := s.findStopExperimentBriefing(ctx, requestID)
+	if err != nil {
+		return domain.ExperimentBriefingStopOperation{}, false, err
+	}
+	if found {
+		if existing.BriefingSessionID != briefingSessionID {
+			return domain.ExperimentBriefingStopOperation{}, false, apperr.New(apperr.CodeBriefingRequestInvalid)
+		}
+
+		return existing, false, nil
+	}
+
+	operationID, err := newBriefingIdentifier()
+	if err != nil {
+		return domain.ExperimentBriefingStopOperation{}, false, err
+	}
+	operation := domain.ExperimentBriefingStopOperation{
+		RequestID:         requestID,
+		BriefingSessionID: briefingSessionID,
+		OperationID:       operationID,
+		State:             domain.BriefingStartStateStarting,
+	}
+
+	tx, err := s.beginBriefingTransaction(ctx)
+	if err != nil {
+		return domain.ExperimentBriefingStopOperation{}, false, fmt.Errorf("begin stop experiment briefing: %w", err)
+	}
+	var state string
+	if err := tx.QueryRowContext(ctx, "SELECT state FROM preparation_sessions WHERE id = ? AND kind = ?", briefingSessionID, "experiment_brief").Scan(&state); err != nil {
+		_ = tx.Rollback()
+		if err == sql.ErrNoRows {
+			return domain.ExperimentBriefingStopOperation{}, false, apperr.New(apperr.CodeBriefingNotFound)
+		}
+
+		return domain.ExperimentBriefingStopOperation{}, false, fmt.Errorf("find stop briefing session: %w", err)
+	}
+	if state != domain.BriefingStartStateStarted {
+		_ = tx.Rollback()
+
+		return domain.ExperimentBriefingStopOperation{}, false, apperr.New(apperr.CodeBriefingNotActive)
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO briefing_stop_operations (id, request_id, preparation_session_id, state) VALUES (?, ?, ?, ?)", operation.OperationID, operation.RequestID, operation.BriefingSessionID, operation.State); err != nil {
+		_ = tx.Rollback()
+		if isBriefingStopRequestConflict(err) {
+			existing, found, findErr := s.findStopExperimentBriefing(ctx, requestID)
+			if findErr != nil {
+				return domain.ExperimentBriefingStopOperation{}, false, findErr
+			}
+			if found && existing.BriefingSessionID == briefingSessionID {
+				return existing, false, nil
+			}
+		}
+
+		return domain.ExperimentBriefingStopOperation{}, false, fmt.Errorf("insert briefing stop operation: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.ExperimentBriefingStopOperation{}, false, fmt.Errorf("commit stop experiment briefing: %w", err)
+	}
+
+	return operation, true, nil
+}
+
+// CompleteStopExperimentBriefing は停止確認後にsessionを停止済みとして保存する。
+func (s *Store) CompleteStopExperimentBriefing(ctx context.Context, requestID string) error {
+	return s.updateStopExperimentBriefing(ctx, requestID, domain.BriefingStartStateStopped, "")
+}
+
+// FailStopExperimentBriefing は安全な停止失敗を保存する。
+func (s *Store) FailStopExperimentBriefing(ctx context.Context, requestID, failureCode string) error {
+	return s.updateStopExperimentBriefing(ctx, requestID, domain.BriefingStartStateFailed, failureCode)
+}
+
+// findStopExperimentBriefing はrequest IDに対応する停止結果を取得する。
+func (s *Store) findStopExperimentBriefing(ctx context.Context, requestID string) (domain.ExperimentBriefingStopOperation, bool, error) {
+	operation := domain.ExperimentBriefingStopOperation{RequestID: requestID}
+	err := s.db.QueryRowContext(ctx, "SELECT preparation_session_id, id, state, failure_code FROM briefing_stop_operations WHERE request_id = ?", requestID).Scan(&operation.BriefingSessionID, &operation.OperationID, &operation.State, &operation.FailureCode)
+	if err == sql.ErrNoRows {
+		return domain.ExperimentBriefingStopOperation{}, false, nil
+	}
+	if err != nil {
+		return domain.ExperimentBriefingStopOperation{}, false, fmt.Errorf("find briefing stop operation: %w", err)
+	}
+
+	return operation, true, nil
+}
+
+// updateStopExperimentBriefing は停止operationとsession状態を同期する。
+func (s *Store) updateStopExperimentBriefing(ctx context.Context, requestID, state, failureCode string) error {
+	tx, err := s.beginBriefingTransaction(ctx)
+	if err != nil {
+		return fmt.Errorf("begin briefing stop update: %w", err)
+	}
+	result, err := tx.ExecContext(ctx, "UPDATE briefing_stop_operations SET state = ?, failure_code = ? WHERE request_id = ?", state, failureCode, requestID)
+	if err != nil {
+		_ = tx.Rollback()
+
+		return fmt.Errorf("update briefing stop operation: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		_ = tx.Rollback()
+
+		return fmt.Errorf("count briefing stop operation updates: %w", err)
+	}
+	if affected != 1 {
+		_ = tx.Rollback()
+
+		return fmt.Errorf("update briefing stop operation: request not found")
+	}
+	if state == domain.BriefingStartStateStopped {
+		updatedAt := time.Now().UTC().Format(time.RFC3339Nano)
+		sessionResult, err := tx.ExecContext(ctx, "UPDATE preparation_sessions SET state = ?, updated_at = ? WHERE id = (SELECT preparation_session_id FROM briefing_stop_operations WHERE request_id = ?)", state, updatedAt, requestID)
+		if err != nil {
+			_ = tx.Rollback()
+
+			return fmt.Errorf("update stopped briefing session: %w", err)
+		}
+		sessionAffected, err := sessionResult.RowsAffected()
+		if err != nil {
+			_ = tx.Rollback()
+
+			return fmt.Errorf("count stopped briefing session updates: %w", err)
+		}
+		if sessionAffected != 1 {
+			_ = tx.Rollback()
+
+			return fmt.Errorf("update stopped briefing session: session not found")
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit briefing stop update: %w", err)
+	}
+
+	return nil
+}
+
 // CompleteExperimentBriefMessage は安全な会話と下書き候補を送信完了として保存。
 func (s *Store) CompleteExperimentBriefMessage(ctx context.Context, requestID, message string, result domain.ExperimentBriefingMessageResult) error {
 	s.briefingMessageMu.Lock()
@@ -415,6 +553,20 @@ func (s *Store) CreateExperimentFromBrief(ctx context.Context, requestID, briefi
 	if err != nil {
 		return domain.ExperimentCreation{}, false, fmt.Errorf("begin experiment creation: %w", err)
 	}
+	var sessionState string
+	if err := tx.QueryRowContext(ctx, "SELECT state FROM preparation_sessions WHERE id = ? AND kind = ?", briefingSessionID, "experiment_brief").Scan(&sessionState); err != nil {
+		_ = tx.Rollback()
+		if err == sql.ErrNoRows {
+			return domain.ExperimentCreation{}, false, apperr.New(apperr.CodeBriefingNotFound)
+		}
+
+		return domain.ExperimentCreation{}, false, fmt.Errorf("find experiment briefing adoption session: %w", err)
+	}
+	if sessionState != domain.BriefingStartStateStarted {
+		_ = tx.Rollback()
+
+		return domain.ExperimentCreation{}, false, apperr.New(apperr.CodeBriefingNotActive)
+	}
 	brief, err := findExperimentBriefForAdoption(ctx, tx, briefingSessionID, briefVersionID)
 	if err != nil {
 		_ = tx.Rollback()
@@ -627,6 +779,11 @@ func isBriefingMessageRequestConflict(err error) bool {
 	return strings.Contains(err.Error(), "UNIQUE constraint failed: briefing_message_operations.request_id")
 }
 
+// isBriefingStopRequestConflict は停止request IDの一意制約競合を判定。
+func isBriefingStopRequestConflict(err error) bool {
+	return strings.Contains(err.Error(), "UNIQUE constraint failed: briefing_stop_operations.request_id")
+}
+
 // newBriefingIdentifier は外部識別子を生成。
 func newBriefingIdentifier() (string, error) {
 	bytes := make([]byte, 16)
@@ -639,6 +796,9 @@ func newBriefingIdentifier() (string, error) {
 
 // ListExperiments は取消済みを分離して実験一覧を読み出す。
 func (s *Store) ListExperiments(ctx context.Context) (domain.ExperimentCollection, error) {
+	s.listMu.Lock()
+	defer s.listMu.Unlock()
+
 	experiments, err := s.listByCancellation(ctx, false)
 	if err != nil {
 		return domain.ExperimentCollection{}, err
