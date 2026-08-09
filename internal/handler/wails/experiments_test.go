@@ -38,7 +38,7 @@ func TestExperimentBriefingsHandlerStartExperimentBriefing(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &handlerBriefingStore{beginErr: tt.storeErr}
-			handler := NewExperimentBriefingsHandler(usecase.NewStartExperimentBriefing(store, handlerBriefingStarter{}), newTestLogger())
+			handler := NewExperimentBriefingsHandler(usecase.NewStartExperimentBriefing(store, handlerBriefingStarter{}), usecase.NewGetExperimentBriefing(store), newTestLogger())
 
 			got := handler.StartExperimentBriefing(tt.requestID)
 			if tt.wantCode != "" {
@@ -97,9 +97,159 @@ func TestFailStartExperimentBriefing(t *testing.T) {
 	}
 }
 
+// 実験ブリーフ再読込失敗の安全な変換。
+func TestFailGetExperimentBriefing(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantCode apperr.Code
+	}{
+		{
+			name:     "アプリケーションエラーを変換する",
+			err:      apperr.New(apperr.CodeBriefingLoadFailed),
+			wantCode: apperr.CodeBriefingLoadFailed,
+		},
+		{
+			name:     "通常エラーを想定外エラーへ変換する",
+			err:      errors.New("private database detail"),
+			wantCode: apperr.CodeUnexpected,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := failGetExperimentBriefing(tt.err)
+			if got.Error == nil {
+				t.Fatal("Error = nil, want safe error")
+			}
+			if got.Error.Code != string(tt.wantCode) {
+				t.Errorf("Error.Code = %q, want %q", got.Error.Code, tt.wantCode)
+			}
+		})
+	}
+}
+
+// Wails実験ブリーフ再読込の成功と安全な失敗返却。
+func TestExperimentBriefingsHandlerGetExperimentBriefing(t *testing.T) {
+	confirmedAt := time.Date(2026, time.August, 9, 1, 2, 3, 0, time.FixedZone("JST", 9*60*60))
+	tests := []struct {
+		name      string
+		store     handlerBriefingStore
+		sessionID string
+		wantCode  apperr.Code
+		wantData  bool
+	}{
+		{
+			name: "会話と最新ブリーフを画面DTOへ変換する",
+			store: handlerBriefingStore{
+				found: true,
+				briefing: domain.ExperimentBriefing{
+					State: "started",
+					Messages: []domain.ExperimentBriefingMessage{{
+						Role:       "user",
+						Content:    "目的",
+						SequenceNo: 1,
+						CreatedAt:  confirmedAt,
+					}},
+					LatestBrief: &domain.ExperimentBrief{
+						VersionID:          "version-1",
+						Decision:           "比較する",
+						SuccessCriteria:    "正確性",
+						RequiredConditions: "固定条件",
+					},
+					LastConfirmedAt: confirmedAt,
+				},
+			},
+			sessionID: "session-1",
+			wantData:  true,
+		},
+		{
+			name:      "未知セッションを安全なコードへ変換する",
+			store:     handlerBriefingStore{},
+			sessionID: "missing",
+			wantCode:  apperr.CodeBriefingNotFound,
+		},
+		{
+			name: "内部エラーを安全なコードへ変換する",
+			store: handlerBriefingStore{
+				getErr: errors.New("SELECT private_content"),
+			},
+			sessionID: "session-2",
+			wantCode:  apperr.CodeBriefingLoadFailed,
+		},
+		{
+			name: "ブリーフ未作成時も空sliceとnilを返す",
+			store: handlerBriefingStore{
+				found: true,
+				briefing: domain.ExperimentBriefing{
+					State:           "started",
+					LastConfirmedAt: confirmedAt,
+				},
+			},
+			sessionID: "session-3",
+			wantData:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := NewExperimentBriefingsHandler(
+				usecase.NewStartExperimentBriefing(&tt.store, handlerBriefingStarter{}),
+				usecase.NewGetExperimentBriefing(&tt.store),
+				newTestLogger(),
+			)
+
+			got := handler.GetExperimentBriefing(tt.sessionID)
+			if gotData := got.Data != nil; gotData != tt.wantData {
+				t.Fatalf("Data available = %v, want %v", gotData, tt.wantData)
+			}
+			if tt.wantData {
+				if tt.sessionID == "session-3" {
+					if got := got.Data.Messages; len(got) != 0 {
+						t.Errorf("Messages = %+v, want empty slice", got)
+					}
+					if got := got.Data.LatestBrief; got != nil {
+						t.Errorf("LatestBrief = %+v, want nil", got)
+					}
+
+					return
+				}
+				if got := got.Data.Messages; len(got) != 1 || got[0].Content != "目的" {
+					t.Errorf("Messages = %+v, want one user message", got)
+				}
+				if got := got.Data.LatestBrief; got == nil || got.VersionID != "version-1" {
+					t.Errorf("LatestBrief = %+v, want version-1", got)
+				}
+				if got := got.Data.LastConfirmedAt; !got.Equal(confirmedAt.UTC()) || got.Location() != time.UTC {
+					t.Errorf("LastConfirmedAt = %s, want UTC %s", got, confirmedAt.UTC())
+				}
+
+				return
+			}
+			if got.Error == nil {
+				t.Fatal("Error = nil, want safe error")
+			}
+			if got.Error.Code != string(tt.wantCode) {
+				t.Errorf("Error.Code = %q, want %q", got.Error.Code, tt.wantCode)
+			}
+			if strings.Contains(got.Error.Message, "private_content") {
+				t.Errorf("Error.Message = %q, want no SQL detail", got.Error.Message)
+			}
+		})
+	}
+}
+
 // handlerBriefingStore はhandler用開始記録portのtest double。
 type handlerBriefingStore struct {
 	beginErr error
+	briefing domain.ExperimentBriefing
+	getErr   error
+	found    bool
+}
+
+// GetExperimentBriefing は指定済み実験ブリーフを返却。
+func (s *handlerBriefingStore) GetExperimentBriefing(context.Context, string) (domain.ExperimentBriefing, bool, error) {
+	return s.briefing, s.found, s.getErr
 }
 
 // BeginExperimentBriefing は指定済み開始結果を返却。

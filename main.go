@@ -46,7 +46,11 @@ func main() {
 	}()
 
 	experimentsHandler := wailshandler.NewExperimentsHandler(usecase.NewListExperiments(store), appLogger)
-	experimentBriefingsHandler := wailshandler.NewExperimentBriefingsHandler(usecase.NewStartExperimentBriefing(store, acp.NotReadyBriefingStarter{}), appLogger)
+	experimentBriefingsHandler := wailshandler.NewExperimentBriefingsHandler(
+		usecase.NewStartExperimentBriefing(store, acp.NotReadyBriefingStarter{}),
+		usecase.NewGetExperimentBriefing(store),
+		appLogger,
+	)
 
 	err = wails.Run(&options.App{
 		Title:       "Context Lab",
