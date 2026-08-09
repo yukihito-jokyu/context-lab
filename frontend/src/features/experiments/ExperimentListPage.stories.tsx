@@ -56,10 +56,14 @@ const sendBriefingMessage = async () => ({
 const createExperimentFromBrief = async () => ({
   data: { experimentId: "EXP-015", state: "preparing" },
 });
+const stopExperimentBriefing = async () => ({
+  data: { operationId: "operation-3" },
+});
 
 const meta = {
   component: ExperimentListPage,
   title: "Features/Experiments/ExperimentListPage",
+  args: { stopExperimentBriefing },
 } satisfies Meta<typeof ExperimentListPage>;
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -237,6 +241,75 @@ export const BriefingMessageCloseBlocked: Story = {
     await expect(
       body.getByRole("dialog", { name: "実験設計を開始" }),
     ).toBeVisible();
+  },
+};
+
+export const BriefingStopPending: Story = {
+  args: {
+    createExperimentFromBrief,
+    listExperiments: async () => success,
+    getExperimentBriefing: async () => ({ data: briefing }),
+    sendExperimentBriefMessage: sendBriefingMessage,
+    startExperimentBriefing: async () => ({
+      data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
+    }),
+    stopExperimentBriefing: () => new Promise(() => {}),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const body = within(canvasElement.ownerDocument.body);
+    await userEvent.click(canvas.getByRole("button", { name: "新規実験" }));
+    const dialog = await body.findByRole("dialog", { name: "実験設計を開始" });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "壁打ちを終了" }),
+    );
+    await expect(within(dialog).getByRole("status")).toHaveTextContent(
+      "壁打ちを終了しています…",
+    );
+    await expect(
+      within(dialog).getByRole("button", { name: "送信" }),
+    ).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    await expect(
+      body.getByRole("dialog", { name: "実験設計を開始" }),
+    ).toBeVisible();
+  },
+};
+
+export const BriefingStopError: Story = {
+  args: {
+    createExperimentFromBrief,
+    listExperiments: async () => success,
+    getExperimentBriefing: async () => ({ data: briefing }),
+    sendExperimentBriefMessage: sendBriefingMessage,
+    startExperimentBriefing: async () => ({
+      data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
+    }),
+    stopExperimentBriefing: fn(async () => ({
+      error: {
+        code: "UNAVAILABLE",
+        message: "壁打ちを終了できませんでした。もう一度お試しください。",
+      },
+    })),
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    const body = within(canvasElement.ownerDocument.body);
+    await userEvent.click(canvas.getByRole("button", { name: "新規実験" }));
+    const dialog = await body.findByRole("dialog", { name: "実験設計を開始" });
+    const messageInput = within(dialog).getByLabelText("AIへの回答");
+    await userEvent.type(messageInput, "停止前の下書きです。");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "壁打ちを終了" }),
+    );
+    await expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "壁打ちを終了できません",
+    );
+    await expect(messageInput).toHaveValue("停止前の下書きです。");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "もう一度試す" }),
+    );
+    await expect(args.stopExperimentBriefing).toHaveBeenCalledTimes(2);
   },
 };
 

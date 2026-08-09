@@ -5,6 +5,7 @@ type StartExperimentBriefingResponse = Record<string, unknown>;
 type GetExperimentBriefingResponse = Record<string, unknown>;
 type SendExperimentBriefMessageResponse = Record<string, unknown>;
 type CreateExperimentFromBriefResponse = Record<string, unknown>;
+type StopExperimentBriefingResponse = Record<string, unknown>;
 
 declare global {
   interface Window {
@@ -15,6 +16,10 @@ declare global {
       message: string;
     }>;
     __briefingRequestIds: string[];
+    __briefingStopRequests: Array<{
+      requestId: string;
+      briefingSessionId: string;
+    }>;
     __createExperimentRequests: Array<{
       requestId: string;
       briefingSessionId: string;
@@ -84,6 +89,7 @@ async function installExperimentBriefingMock(
   briefingResponses: GetExperimentBriefingResponse[] = [],
   messageResponses: SendExperimentBriefMessageResponse[] = [],
   createResponses: CreateExperimentFromBriefResponse[] = [],
+  stopResponses: StopExperimentBriefingResponse[] = [],
 ) {
   await page.addInitScript({
     content: `
@@ -91,14 +97,17 @@ async function installExperimentBriefingMock(
       const briefingResponses = ${JSON.stringify(briefingResponses)};
       const messageResponses = ${JSON.stringify(messageResponses)};
       const createResponses = ${JSON.stringify(createResponses)};
+      const stopResponses = ${JSON.stringify(stopResponses)};
       let callCount = 0;
       let briefingCallCount = 0;
       let messageCallCount = 0;
       let createCallCount = 0;
+      let stopCallCount = 0;
       window.go = window.go || { wails: {} };
       window.__briefingRequestIds = [];
       window.__briefingMessageRequests = [];
       window.__briefingGetCallCount = 0;
+      window.__briefingStopRequests = [];
       window.__createExperimentRequests = [];
       window.go.wails.ExperimentBriefingsHandler = {
         StartExperimentBriefing: (requestId) => {
@@ -133,6 +142,17 @@ async function installExperimentBriefingMock(
           window.__createExperimentRequests.push({ requestId, briefingSessionId, briefVersionId });
           const response = createResponses[Math.min(createCallCount, createResponses.length - 1)];
           createCallCount += 1;
+          if (response.delayMs) {
+            return new Promise((resolve) => {
+              window.setTimeout(() => resolve(response.result), response.delayMs);
+            });
+          }
+          return Promise.resolve(response);
+        },
+        StopExperimentBriefing: (requestId, briefingSessionId) => {
+          window.__briefingStopRequests.push({ requestId, briefingSessionId });
+          const response = stopResponses[Math.min(stopCallCount, stopResponses.length - 1)];
+          stopCallCount += 1;
           if (response.delayMs) {
             return new Promise((resolve) => {
               window.setTimeout(() => resolve(response.result), response.delayMs);
@@ -465,11 +485,23 @@ test("前のセッションの遅延応答で再開始後の会話を上書き�
         },
       },
     ],
+    [],
+    [],
+    [{ data: { operationId: "operation-stop-old" } }],
   );
   await page.goto("/");
 
   await page.locator("#new-experiment-button").click();
+  await expect(page.locator("#stop-experiment-briefing-button")).toBeVisible();
   await page.keyboard.press("Escape");
+  await expect
+    .poll(() => page.evaluate(() => window.__briefingStopRequests))
+    .toEqual([
+      {
+        requestId: expect.any(String),
+        briefingSessionId: "briefing-old",
+      },
+    ]);
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await page.locator("#new-experiment-button").click();
   await expect(page.locator("#briefing-chat-log")).toContainText("新しい会話");
@@ -477,6 +509,40 @@ test("前のセッションの遅延応答で再開始後の会話を上書き�
   await expect(page.locator("#briefing-chat-log")).not.toContainText(
     "古い会話",
   );
+});
+
+test("壁打ち停止に失敗するとモーダルと下書きを維持する", async ({ page }) => {
+  await installListExperimentsMock(page, [successResponse]);
+  await installExperimentBriefingMock(
+    page,
+    [{ data: { briefingSessionId: "briefing-1", operationId: "operation-1" } }],
+    [{ data: { state: "active", messages: [], lastConfirmedAt: confirmedAt } }],
+    [],
+    [],
+    [
+      {
+        error: {
+          code: "UNAVAILABLE",
+          message: "壁打ちを終了できませんでした。もう一度お試しください。",
+        },
+      },
+    ],
+  );
+  await page.goto("/");
+
+  await page.locator("#new-experiment-button").click();
+  const messageInput = page.locator("#briefing-message-input");
+  await messageInput.fill("停止前の下書きです。");
+  await page.keyboard.press("Escape");
+
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.locator("#briefing-stop-error")).toContainText(
+    "壁打ちを終了できませんでした。",
+  );
+  await expect(messageInput).toHaveValue("停止前の下書きです。");
+  await expect
+    .poll(() => page.evaluate(() => window.__briefingStopRequests.length))
+    .toBe(1);
 });
 
 const completeBriefResponse = {
