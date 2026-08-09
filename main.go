@@ -48,6 +48,7 @@ func main() {
 	experimentsHandler := wailshandler.NewExperimentsHandler(usecase.NewListExperiments(store), appLogger)
 	experimentBriefingsHandler := wailshandler.NewExperimentBriefingsHandler(
 		usecase.NewStartExperimentBriefing(store, acp.NotReadyBriefingStarter{}),
+		usecase.NewSendExperimentBriefMessage(store, acp.NotReadyBriefingMessageSender{}),
 		usecase.NewGetExperimentBriefing(store),
 		appLogger,
 	)
