@@ -1,5 +1,19 @@
 export namespace wails {
 	
+	export class CreateExperimentFromBriefData {
+	    experimentId: string;
+	    state: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CreateExperimentFromBriefData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.experimentId = source["experimentId"];
+	        this.state = source["state"];
+	    }
+	}
 	export class ErrorResponse {
 	    code: string;
 	    message: string;
@@ -14,10 +28,48 @@ export namespace wails {
 	        this.message = source["message"];
 	    }
 	}
+	export class CreateExperimentFromBriefResponse {
+	    data?: CreateExperimentFromBriefData;
+	    error?: ErrorResponse;
+	
+	    static createFrom(source: any = {}) {
+	        return new CreateExperimentFromBriefResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.data = this.convertValues(source["data"], CreateExperimentFromBriefData);
+	        this.error = this.convertValues(source["error"], ErrorResponse);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class ExperimentBriefResponse {
 	    versionId: string;
+	    purpose: string;
 	    decision: string;
 	    hypothesis?: string;
+	    candidatePrompts: string[];
+	    evaluationAxes: string;
+	    environmentConditions: string;
+	    initialInput: string;
 	    successCriteria: string;
 	    requiredConditions: string;
 	    openQuestion?: string;
@@ -29,8 +81,13 @@ export namespace wails {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.versionId = source["versionId"];
+	        this.purpose = source["purpose"];
 	        this.decision = source["decision"];
 	        this.hypothesis = source["hypothesis"];
+	        this.candidatePrompts = source["candidatePrompts"];
+	        this.evaluationAxes = source["evaluationAxes"];
+	        this.environmentConditions = source["environmentConditions"];
+	        this.initialInput = source["initialInput"];
 	        this.successCriteria = source["successCriteria"];
 	        this.requiredConditions = source["requiredConditions"];
 	        this.openQuestion = source["openQuestion"];

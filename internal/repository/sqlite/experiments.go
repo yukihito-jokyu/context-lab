@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -274,7 +275,11 @@ func (s *Store) insertExperimentBriefVersion(ctx context.Context, tx briefingTra
 	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(MAX(version_no), 0) + 1 FROM briefing_versions WHERE preparation_session_id = ?", briefingSessionID).Scan(&nextVersion); err != nil {
 		return fmt.Errorf("find next briefing version: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO briefing_versions (id, preparation_session_id, version_no, decision, hypothesis, success_criteria, required_conditions, open_question, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", versionID, briefingSessionID, nextVersion, brief.Decision, brief.Hypothesis, brief.SuccessCriteria, brief.RequiredConditions, brief.OpenQuestion, createdAt); err != nil {
+	candidatePrompts, err := json.Marshal(brief.CandidatePrompts)
+	if err != nil {
+		return fmt.Errorf("marshal candidate prompts: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO briefing_versions (id, preparation_session_id, version_no, decision, hypothesis, success_criteria, required_conditions, open_question, created_at, purpose, candidate_prompts, evaluation_criteria, environment_conditions, initial_input) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", versionID, briefingSessionID, nextVersion, brief.Decision, brief.Hypothesis, brief.SuccessCriteria, brief.RequiredConditions, brief.OpenQuestion, createdAt, brief.Purpose, string(candidatePrompts), brief.EvaluationCriteria, brief.EnvironmentConditions, brief.InitialInput); err != nil {
 		return fmt.Errorf("insert briefing version: %w", err)
 	}
 
@@ -367,7 +372,8 @@ func (s *Store) findLatestExperimentBrief(ctx context.Context, briefingSessionID
 	var hypothesis sql.NullString
 	var openQuestion sql.NullString
 	var createdAt string
-	err := s.db.QueryRowContext(ctx, "SELECT id, decision, hypothesis, success_criteria, required_conditions, open_question, created_at FROM briefing_versions WHERE preparation_session_id = ? ORDER BY version_no DESC LIMIT 1", briefingSessionID).Scan(&brief.VersionID, &brief.Decision, &hypothesis, &brief.SuccessCriteria, &brief.RequiredConditions, &openQuestion, &createdAt)
+	var candidatePrompts string
+	err := s.db.QueryRowContext(ctx, "SELECT id, purpose, decision, hypothesis, candidate_prompts, evaluation_criteria, environment_conditions, initial_input, success_criteria, required_conditions, open_question, created_at FROM briefing_versions WHERE preparation_session_id = ? ORDER BY version_no DESC LIMIT 1", briefingSessionID).Scan(&brief.VersionID, &brief.Purpose, &brief.Decision, &hypothesis, &candidatePrompts, &brief.EvaluationCriteria, &brief.EnvironmentConditions, &brief.InitialInput, &brief.SuccessCriteria, &brief.RequiredConditions, &openQuestion, &createdAt)
 	if err == sql.ErrNoRows {
 		return nil, time.Time{}, nil
 	}
@@ -380,12 +386,151 @@ func (s *Store) findLatestExperimentBrief(ctx context.Context, briefingSessionID
 	if openQuestion.Valid {
 		brief.OpenQuestion = &openQuestion.String
 	}
+	if err := json.Unmarshal([]byte(candidatePrompts), &brief.CandidatePrompts); err != nil {
+		return nil, time.Time{}, fmt.Errorf("unmarshal candidate prompts: %w", err)
+	}
 	parsedCreatedAt, err := time.Parse(time.RFC3339Nano, createdAt)
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("parse briefing version creation time: %w", err)
 	}
 
 	return brief, parsedCreatedAt.UTC(), nil
+}
+
+// 採用済みブリーフ版からの準備中実験原子的保存。
+func (s *Store) CreateExperimentFromBrief(ctx context.Context, requestID, briefingSessionID, briefVersionID string) (domain.ExperimentCreation, bool, error) {
+	existing, found, err := s.findExperimentCreation(ctx, requestID)
+	if err != nil {
+		return domain.ExperimentCreation{}, false, err
+	}
+	if found {
+		if existing.BriefingSessionID != briefingSessionID || existing.BriefVersionID != briefVersionID {
+			return domain.ExperimentCreation{}, false, apperr.New(apperr.CodeExperimentCreateRequestConflict)
+		}
+
+		return domain.ExperimentCreation{ExperimentID: existing.ExperimentID, State: "preparing"}, false, nil
+	}
+
+	tx, err := s.beginBriefingTransaction(ctx)
+	if err != nil {
+		return domain.ExperimentCreation{}, false, fmt.Errorf("begin experiment creation: %w", err)
+	}
+	brief, err := findExperimentBriefForAdoption(ctx, tx, briefingSessionID, briefVersionID)
+	if err != nil {
+		_ = tx.Rollback()
+
+		return domain.ExperimentCreation{}, false, err
+	}
+	if err := validateExperimentBriefForAdoption(brief); err != nil {
+		_ = tx.Rollback()
+
+		return domain.ExperimentCreation{}, false, err
+	}
+	experimentID, err := newBriefingIdentifier()
+	if err != nil {
+		_ = tx.Rollback()
+
+		return domain.ExperimentCreation{}, false, fmt.Errorf("generate experiment identifier: %w", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := tx.ExecContext(ctx, "INSERT INTO experiments (id, purpose, state, updated_at) VALUES (?, ?, ?, ?)", experimentID, brief.Purpose, "preparing", now); err != nil {
+		_ = tx.Rollback()
+
+		return domain.ExperimentCreation{}, false, fmt.Errorf("insert experiment: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO experiment_preparations (experiment_id, briefing_session_id, briefing_version_id, hypothesis, environment_conditions, initial_input, evaluation_criteria, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", experimentID, briefingSessionID, briefVersionID, brief.Hypothesis, brief.EnvironmentConditions, brief.InitialInput, brief.EvaluationCriteria, now, now); err != nil {
+		_ = tx.Rollback()
+
+		return domain.ExperimentCreation{}, false, fmt.Errorf("insert experiment preparation: %w", err)
+	}
+	for index, prompt := range brief.CandidatePrompts {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO experiment_preparation_prompts (experiment_id, sequence_no, content) VALUES (?, ?, ?)", experimentID, index+1, prompt); err != nil {
+			_ = tx.Rollback()
+
+			return domain.ExperimentCreation{}, false, fmt.Errorf("insert experiment preparation prompt: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO experiment_creation_operations (request_id, briefing_session_id, briefing_version_id, experiment_id) VALUES (?, ?, ?, ?)", requestID, briefingSessionID, briefVersionID, experimentID); err != nil {
+		_ = tx.Rollback()
+		if isExperimentCreationRequestConflict(err) {
+			existing, found, findErr := s.findExperimentCreation(ctx, requestID)
+			if findErr != nil {
+				return domain.ExperimentCreation{}, false, findErr
+			}
+			if found && existing.BriefingSessionID == briefingSessionID && existing.BriefVersionID == briefVersionID {
+				return domain.ExperimentCreation{ExperimentID: existing.ExperimentID, State: "preparing"}, false, nil
+			}
+		}
+
+		return domain.ExperimentCreation{}, false, fmt.Errorf("insert experiment creation operation: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.ExperimentCreation{}, false, fmt.Errorf("commit experiment creation: %w", err)
+	}
+
+	return domain.ExperimentCreation{ExperimentID: experimentID, State: "preparing"}, true, nil
+}
+
+// experimentCreationOperation は採用操作の冪等性確認用記録。
+type experimentCreationOperation struct {
+	BriefingSessionID string
+	BriefVersionID    string
+	ExperimentID      string
+}
+
+// request ID対応採用操作取得。
+func (s *Store) findExperimentCreation(ctx context.Context, requestID string) (experimentCreationOperation, bool, error) {
+	var operation experimentCreationOperation
+	err := s.db.QueryRowContext(ctx, "SELECT briefing_session_id, briefing_version_id, experiment_id FROM experiment_creation_operations WHERE request_id = ?", requestID).Scan(&operation.BriefingSessionID, &operation.BriefVersionID, &operation.ExperimentID)
+	if err == sql.ErrNoRows {
+		return experimentCreationOperation{}, false, nil
+	}
+	if err != nil {
+		return experimentCreationOperation{}, false, fmt.Errorf("find experiment creation operation: %w", err)
+	}
+
+	return operation, true, nil
+}
+
+// 指定session所有ブリーフ版取得。
+func findExperimentBriefForAdoption(ctx context.Context, tx briefingTransaction, briefingSessionID, briefVersionID string) (domain.ExperimentBrief, error) {
+	var brief domain.ExperimentBrief
+	var hypothesis sql.NullString
+	var prompts string
+	err := tx.QueryRowContext(ctx, "SELECT purpose, hypothesis, candidate_prompts, evaluation_criteria, environment_conditions, initial_input FROM briefing_versions WHERE id = ? AND preparation_session_id = ?", briefVersionID, briefingSessionID).Scan(&brief.Purpose, &hypothesis, &prompts, &brief.EvaluationCriteria, &brief.EnvironmentConditions, &brief.InitialInput)
+	if err == sql.ErrNoRows {
+		return domain.ExperimentBrief{}, apperr.New(apperr.CodeExperimentBriefVersionNotFound)
+	}
+	if err != nil {
+		return domain.ExperimentBrief{}, fmt.Errorf("find experiment brief version: %w", err)
+	}
+	if hypothesis.Valid {
+		brief.Hypothesis = &hypothesis.String
+	}
+	if err := json.Unmarshal([]byte(prompts), &brief.CandidatePrompts); err != nil {
+		return domain.ExperimentBrief{}, fmt.Errorf("unmarshal experiment brief prompts: %w", err)
+	}
+
+	return brief, nil
+}
+
+// 実験作成用採用値検証。
+func validateExperimentBriefForAdoption(brief domain.ExperimentBrief) error {
+	if strings.TrimSpace(brief.Purpose) == "" || strings.TrimSpace(brief.EvaluationCriteria) == "" || strings.TrimSpace(brief.EnvironmentConditions) == "" || len(brief.CandidatePrompts) < 2 {
+		return apperr.New(apperr.CodeExperimentBriefIncomplete)
+	}
+	for _, prompt := range brief.CandidatePrompts {
+		if strings.TrimSpace(prompt) == "" {
+			return apperr.New(apperr.CodeExperimentBriefIncomplete)
+		}
+	}
+
+	return nil
+}
+
+// 採用request ID一意制約競合判定。
+func isExperimentCreationRequestConflict(err error) bool {
+	return strings.Contains(err.Error(), "UNIQUE constraint failed: experiment_creation_operations.request_id")
 }
 
 // latestTime はゼロ値を除いて最も新しいUTC時刻を返す。

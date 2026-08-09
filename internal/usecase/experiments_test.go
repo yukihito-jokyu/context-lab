@@ -100,6 +100,94 @@ func TestStartExperimentBriefingExecute(t *testing.T) {
 	}
 }
 
+// CreateExperimentFromBriefの入力検証とエラー正規化。
+func TestCreateExperimentFromBriefExecute(t *testing.T) {
+	tests := []struct {
+		name       string
+		requestID  string
+		sessionID  string
+		versionID  string
+		creatorErr error
+		wantCode   apperr.Code
+		wantCalls  int
+	}{
+		{
+			name:      "準備中実験を作成する",
+			requestID: "request-1",
+			sessionID: "session-1",
+			versionID: "version-1",
+			wantCalls: 1,
+		},
+		{
+			name:      "入力不足を拒否する",
+			sessionID: "session-1",
+			versionID: "version-1",
+			wantCode:  apperr.CodeBriefingRequestInvalid,
+		},
+		{
+			name:       "アプリケーションエラーを保持する",
+			requestID:  "request-1",
+			sessionID:  "session-1",
+			versionID:  "version-1",
+			creatorErr: apperr.New(apperr.CodeExperimentBriefIncomplete),
+			wantCode:   apperr.CodeExperimentBriefIncomplete,
+			wantCalls:  1,
+		},
+		{
+			name:       "内部エラーを安全な作成失敗へ変換する",
+			requestID:  "request-1",
+			sessionID:  "session-1",
+			versionID:  "version-1",
+			creatorErr: errors.New("private database detail"),
+			wantCode:   apperr.CodeExperimentCreateFailed,
+			wantCalls:  1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			creator := &fakeExperimentBriefCreator{
+				err: tt.creatorErr,
+			}
+
+			got, err := NewCreateExperimentFromBrief(creator).Execute(context.Background(), tt.requestID, tt.sessionID, tt.versionID)
+			if gotCalls := creator.calls; gotCalls != tt.wantCalls {
+				t.Errorf("CreateExperimentFromBrief() calls = %d, want %d", gotCalls, tt.wantCalls)
+			}
+			if tt.wantCode != "" {
+				assertBriefingErrorCode(t, err, tt.wantCode)
+
+				return
+			}
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if got.ExperimentID != "experiment-1" || got.State != "preparing" {
+				t.Errorf("creation = %+v, want preparing experiment", got)
+			}
+		})
+	}
+}
+
+// fakeExperimentBriefCreator はブリーフ採用portのtest double。
+type fakeExperimentBriefCreator struct {
+	err   error
+	calls int
+}
+
+// 指定済み採用結果返却。
+func (f *fakeExperimentBriefCreator) CreateExperimentFromBrief(context.Context, string, string, string) (domain.ExperimentCreation, bool, error) {
+	f.calls++
+	if f.err != nil {
+		return domain.ExperimentCreation{}, false, f.err
+	}
+
+	return domain.ExperimentCreation{
+		ExperimentID: "experiment-1",
+		State:        "preparing",
+	}, true, nil
+}
+
 // 永続済み開始失敗の安全な復元。
 func TestBriefingFailure(t *testing.T) {
 	tests := []struct {

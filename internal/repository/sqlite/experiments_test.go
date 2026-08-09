@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/yukihito-jokyu/context-lab/internal/domain"
+	apperr "github.com/yukihito-jokyu/context-lab/internal/errors"
 )
 
 // SQLite実験ブリーフ開始の原子的記録と再利用。
@@ -122,6 +123,500 @@ func TestStoreExperimentBriefMessage(t *testing.T) {
 	if briefing.LatestBrief == nil || briefing.LatestBrief.Decision != "比較する" {
 		t.Errorf("LatestBrief = %+v, want saved brief", briefing.LatestBrief)
 	}
+}
+
+// SQLiteブリーフ採用の原子的保存と冪等性。
+func TestStoreCreateExperimentFromBrief(t *testing.T) {
+	tests := []struct {
+		name           string
+		requestID      string
+		briefVersionID string
+		wantCode       apperr.Code
+		wantCreated    bool
+	}{
+		{
+			name:           "採用値を準備中実験へ保存する",
+			requestID:      "request-1",
+			briefVersionID: "version-1",
+			wantCreated:    true,
+		},
+		{
+			name:           "他sessionの版を拒否する",
+			requestID:      "request-2",
+			briefVersionID: "other-version",
+			wantCode:       apperr.CodeExperimentBriefVersionNotFound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newExperimentCreationTestStore(t)
+
+			got, created, err := store.CreateExperimentFromBrief(context.Background(), tt.requestID, "session-1", tt.briefVersionID)
+			if tt.wantCode != "" {
+				if gotCode := apperr.As(err); gotCode == nil || gotCode.Code != tt.wantCode {
+					t.Errorf("CreateExperimentFromBrief() error = %v, want code %q", err, tt.wantCode)
+				}
+				var count int
+				if countErr := store.db.QueryRow("SELECT COUNT(*) FROM experiments").Scan(&count); countErr != nil {
+					t.Fatalf("experiment count error = %v", countErr)
+				}
+				if count != 0 {
+					t.Errorf("experiments = %d, want 0", count)
+				}
+
+				return
+			}
+			if err != nil {
+				t.Fatalf("CreateExperimentFromBrief() error = %v", err)
+			}
+			if created != tt.wantCreated {
+				t.Errorf("created = %v, want %v", created, tt.wantCreated)
+			}
+			if got.State != "preparing" || got.ExperimentID == "" {
+				t.Errorf("creation = %+v, want preparing experiment", got)
+			}
+			var purpose, environment, evaluation, initialInput string
+			if err := store.db.QueryRow("SELECT e.purpose, p.environment_conditions, p.evaluation_criteria, p.initial_input FROM experiments e JOIN experiment_preparations p ON p.experiment_id = e.id WHERE e.id = ?", got.ExperimentID).Scan(&purpose, &environment, &evaluation, &initialInput); err != nil {
+				t.Fatalf("saved preparation error = %v", err)
+			}
+			if purpose != "目的" || environment != "隔離環境" || evaluation != "正確性" || initialInput != "初期入力" {
+				t.Errorf("saved preparation = %q, %q, %q, %q, want adopted values", purpose, environment, evaluation, initialInput)
+			}
+			var promptCount int
+			if err := store.db.QueryRow("SELECT COUNT(*) FROM experiment_preparation_prompts WHERE experiment_id = ?", got.ExperimentID).Scan(&promptCount); err != nil {
+				t.Fatalf("prompt count error = %v", err)
+			}
+			if promptCount != 2 {
+				t.Errorf("prompt count = %d, want 2", promptCount)
+			}
+			second, secondCreated, secondErr := store.CreateExperimentFromBrief(context.Background(), tt.requestID, "session-1", tt.briefVersionID)
+			if secondErr != nil {
+				t.Fatalf("second CreateExperimentFromBrief() error = %v", secondErr)
+			}
+			if secondCreated {
+				t.Error("second created = true, want false")
+			}
+			if second != got {
+				t.Errorf("second creation = %+v, want %+v", second, got)
+			}
+			if _, _, conflictErr := store.CreateExperimentFromBrief(context.Background(), tt.requestID, "session-2", "other-version"); !apperr.IsCode(conflictErr, apperr.CodeExperimentCreateRequestConflict) {
+				t.Errorf("conflicting request error = %v, want %q", conflictErr, apperr.CodeExperimentCreateRequestConflict)
+			}
+		})
+	}
+}
+
+// ブリーフ採用用保存済み版生成。
+func newExperimentCreationTestStore(t *testing.T) *Store {
+	t.Helper()
+
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+	createdAt := "2026-08-09T00:00:00Z"
+	if _, err := store.db.Exec("INSERT INTO preparation_sessions (id, kind, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", "session-1", "experiment_brief", domain.BriefingStartStateStarted, createdAt, createdAt); err != nil {
+		t.Fatalf("seed preparation session error = %v", err)
+	}
+	if _, err := store.db.Exec("INSERT INTO preparation_sessions (id, kind, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", "session-2", "experiment_brief", domain.BriefingStartStateStarted, createdAt, createdAt); err != nil {
+		t.Fatalf("seed other preparation session error = %v", err)
+	}
+	if _, err := store.db.Exec("INSERT INTO briefing_versions (id, preparation_session_id, version_no, decision, success_criteria, required_conditions, created_at, purpose, candidate_prompts, evaluation_criteria, environment_conditions, initial_input) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", "version-1", "session-1", 1, "採用", "基準", "条件", createdAt, "目的", `["prompt A","prompt B"]`, "正確性", "隔離環境", "初期入力"); err != nil {
+		t.Fatalf("seed briefing version error = %v", err)
+	}
+	if _, err := store.db.Exec("INSERT INTO briefing_versions (id, preparation_session_id, version_no, decision, success_criteria, required_conditions, created_at, purpose, candidate_prompts, evaluation_criteria, environment_conditions, initial_input) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", "other-version", "session-2", 1, "採用", "基準", "条件", createdAt, "目的", `["prompt A","prompt B"]`, "正確性", "隔離環境", "初期入力"); err != nil {
+		t.Fatalf("seed other briefing version error = %v", err)
+	}
+
+	return store
+}
+
+// ブリーフ採用補助関数の境界。
+func TestExperimentBriefAdoptionHelpers(t *testing.T) {
+	tests := []struct {
+		name     string
+		brief    domain.ExperimentBrief
+		wantCode apperr.Code
+	}{
+		{
+			name: "必須項目不足を拒否する",
+			brief: domain.ExperimentBrief{
+				CandidatePrompts: []string{
+					"prompt A",
+					"prompt B",
+				},
+			},
+			wantCode: apperr.CodeExperimentBriefIncomplete,
+		},
+		{
+			name: "空promptを拒否する",
+			brief: domain.ExperimentBrief{
+				Purpose:               "目的",
+				EvaluationCriteria:    "基準",
+				EnvironmentConditions: "環境",
+				CandidatePrompts: []string{
+					"prompt A",
+					" ",
+				},
+			},
+			wantCode: apperr.CodeExperimentBriefIncomplete,
+		},
+		{
+			name: "必要条件が揃う",
+			brief: domain.ExperimentBrief{
+				Purpose:               "目的",
+				EvaluationCriteria:    "基準",
+				EnvironmentConditions: "環境",
+				CandidatePrompts: []string{
+					"prompt A",
+					"prompt B",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateExperimentBriefForAdoption(tt.brief)
+			if tt.wantCode == "" {
+				if err != nil {
+					t.Errorf("validateExperimentBriefForAdoption() error = %v, want nil", err)
+				}
+
+				return
+			}
+			if !apperr.IsCode(err, tt.wantCode) {
+				t.Errorf("validateExperimentBriefForAdoption() error = %v, want %q", err, tt.wantCode)
+			}
+		})
+	}
+	if !isExperimentCreationRequestConflict(errors.New("UNIQUE constraint failed: experiment_creation_operations.request_id")) {
+		t.Error("isExperimentCreationRequestConflict() = false, want true")
+	}
+	if isExperimentCreationRequestConflict(errors.New("database locked")) {
+		t.Error("isExperimentCreationRequestConflict() = true, want false")
+	}
+}
+
+// SQLiteブリーフ採用保存の失敗時ロールバック。
+func TestStoreCreateExperimentFromBriefFailures(t *testing.T) {
+	tests := []struct {
+		name         string
+		beginErr     error
+		rows         []briefingRow
+		execErrors   []error
+		commitErr    error
+		prepare      func(*testing.T, *Store, *fakeBriefingTransaction)
+		want         string
+		wantRollback bool
+	}{
+		{
+			name:     "トランザクション開始失敗",
+			beginErr: errors.New("begin unavailable"),
+			want:     "begin experiment creation",
+		},
+		{
+			name: "版検索失敗",
+			rows: []briefingRow{
+				fakeBriefingRow{err: errors.New("version unavailable")},
+			},
+			want:         "find experiment brief version",
+			wantRollback: true,
+		},
+		{
+			name: "未完全ブリーフ",
+			rows: []briefingRow{
+				fakeBriefingRow{values: []any{
+					"",
+					nil,
+					`["prompt A","prompt B"]`,
+					"基準",
+					"環境",
+					"",
+				}},
+			},
+			want:         "条件が不足",
+			wantRollback: true,
+		},
+		{
+			name: "識別子生成失敗",
+			rows: []briefingRow{
+				validExperimentBriefingRow(),
+			},
+			prepare: func(t *testing.T, _ *Store, _ *fakeBriefingTransaction) {
+				t.Helper()
+				replaceBriefingRandom(t, func([]byte) (int, error) {
+					return 0, errors.New("random unavailable")
+				})
+			},
+			want:         "generate experiment identifier",
+			wantRollback: true,
+		},
+		{
+			name: "実験保存失敗",
+			rows: []briefingRow{
+				validExperimentBriefingRow(),
+			},
+			execErrors:   []error{errors.New("experiment unavailable")},
+			want:         "insert experiment",
+			wantRollback: true,
+		},
+		{
+			name: "準備値保存失敗",
+			rows: []briefingRow{
+				validExperimentBriefingRow(),
+			},
+			execErrors: []error{
+				nil,
+				errors.New("preparation unavailable"),
+			},
+			want:         "insert experiment preparation",
+			wantRollback: true,
+		},
+		{
+			name: "prompt保存失敗",
+			rows: []briefingRow{
+				validExperimentBriefingRow(),
+			},
+			execErrors: []error{
+				nil,
+				nil,
+				errors.New("prompt unavailable"),
+			},
+			want:         "insert experiment preparation prompt",
+			wantRollback: true,
+		},
+		{
+			name: "operation保存失敗",
+			rows: []briefingRow{
+				validExperimentBriefingRow(),
+			},
+			execErrors: []error{
+				nil,
+				nil,
+				nil,
+				nil,
+				errors.New("operation unavailable"),
+			},
+			want:         "insert experiment creation operation",
+			wantRollback: true,
+		},
+		{
+			name: "確定失敗",
+			rows: []briefingRow{
+				validExperimentBriefingRow(),
+			},
+			commitErr: errors.New("commit unavailable"),
+			want:      "commit experiment creation",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newExperimentCreationTestStore(t)
+			transaction := &fakeBriefingTransaction{
+				rows:        tt.rows,
+				execErrors:  tt.execErrors,
+				commitError: tt.commitErr,
+			}
+			if tt.beginErr != nil {
+				store.beginBriefingTransaction = func(context.Context) (briefingTransaction, error) {
+					return nil, tt.beginErr
+				}
+			} else {
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(transaction)
+			}
+			if tt.prepare != nil {
+				tt.prepare(t, store, transaction)
+			}
+
+			_, _, err := store.CreateExperimentFromBrief(context.Background(), "request-failure", "session-1", "version-1")
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("CreateExperimentFromBrief() error = %v, want containing %q", err, tt.want)
+			}
+			if gotRollback := transaction.rollbackCalls > 0; gotRollback != tt.wantRollback {
+				t.Errorf("rollback = %v, want %v", gotRollback, tt.wantRollback)
+			}
+		})
+	}
+}
+
+// SQLiteブリーフ採用操作の競合再読込。
+func TestStoreCreateExperimentFromBriefConflictRecovery(t *testing.T) {
+	store := newExperimentCreationTestStore(t)
+	transaction := &fakeBriefingTransaction{
+		rows: []briefingRow{
+			validExperimentBriefingRow(),
+		},
+		execErrors: []error{
+			nil,
+			nil,
+			nil,
+			nil,
+			errors.New("UNIQUE constraint failed: experiment_creation_operations.request_id"),
+		},
+	}
+	transaction.onExec = func(call int) {
+		if call != 5 {
+			return
+		}
+		if _, err := store.db.Exec("INSERT INTO experiments (id, purpose, state, updated_at) VALUES (?, ?, ?, ?)", "experiment-race", "目的", "preparing", "2026-08-09T00:00:00Z"); err != nil {
+			t.Fatalf("seed raced experiment error = %v", err)
+		}
+		if _, err := store.db.Exec("INSERT INTO experiment_creation_operations (request_id, briefing_session_id, briefing_version_id, experiment_id) VALUES (?, ?, ?, ?)", "request-race", "session-1", "version-1", "experiment-race"); err != nil {
+			t.Fatalf("seed raced operation error = %v", err)
+		}
+	}
+	store.beginBriefingTransaction = fakeBriefingTransactionFactory(transaction)
+
+	got, created, err := store.CreateExperimentFromBrief(context.Background(), "request-race", "session-1", "version-1")
+	if err != nil {
+		t.Fatalf("CreateExperimentFromBrief() error = %v", err)
+	}
+	if created {
+		t.Error("created = true, want false")
+	}
+	if got.ExperimentID != "experiment-race" || got.State != "preparing" {
+		t.Errorf("creation = %+v, want recovered operation", got)
+	}
+}
+
+// SQLiteブリーフ採用操作の検索失敗境界。
+func TestStoreCreateExperimentFromBriefLookupFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func(*testing.T, *Store)
+		want    string
+	}{
+		{
+			name: "既存操作検索失敗",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				if err := store.db.Close(); err != nil {
+					t.Fatalf("Close() error = %v", err)
+				}
+			},
+			want: "find experiment creation operation",
+		},
+		{
+			name: "競合後操作検索失敗",
+			prepare: func(t *testing.T, store *Store) {
+				t.Helper()
+				transaction := &fakeBriefingTransaction{
+					rows: []briefingRow{
+						validExperimentBriefingRow(),
+					},
+					execErrors: []error{
+						nil,
+						nil,
+						nil,
+						nil,
+						errors.New("UNIQUE constraint failed: experiment_creation_operations.request_id"),
+					},
+				}
+				transaction.onExec = func(call int) {
+					if call != 5 {
+						return
+					}
+					if err := store.db.Close(); err != nil {
+						t.Fatalf("Close() error = %v", err)
+					}
+				}
+				store.beginBriefingTransaction = fakeBriefingTransactionFactory(transaction)
+			},
+			want: "find experiment creation operation",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newExperimentCreationTestStore(t)
+			tt.prepare(t, store)
+
+			_, _, err := store.CreateExperimentFromBrief(context.Background(), "request-lookup", "session-1", "version-1")
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("CreateExperimentFromBrief() error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// ブリーフ採用読込補助関数の失敗境界。
+func TestExperimentBriefAdoptionReadHelpers(t *testing.T) {
+	store := newExperimentCreationTestStore(t)
+	if err := store.db.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if _, _, err := store.findExperimentCreation(context.Background(), "request-1"); err == nil || !strings.Contains(err.Error(), "find experiment creation operation") {
+		t.Errorf("findExperimentCreation() error = %v, want query failure", err)
+	}
+
+	tests := []struct {
+		name string
+		row  briefingRow
+		want string
+	}{
+		{
+			name: "仮説を復元する",
+			row: fakeBriefingRow{values: []any{
+				"目的",
+				"仮説",
+				`["prompt A","prompt B"]`,
+				"基準",
+				"環境",
+				"初期入力",
+			}},
+		},
+		{
+			name: "prompt形式不正を返す",
+			row: fakeBriefingRow{values: []any{
+				"目的",
+				nil,
+				"invalid-json",
+				"基準",
+				"環境",
+				"初期入力",
+			}},
+			want: "unmarshal experiment brief prompts",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			brief, err := findExperimentBriefForAdoption(context.Background(), &fakeBriefingTransaction{rows: []briefingRow{tt.row}}, "session-1", "version-1")
+			if tt.want != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.want) {
+					t.Errorf("findExperimentBriefForAdoption() error = %v, want containing %q", err, tt.want)
+				}
+
+				return
+			}
+			if err != nil {
+				t.Fatalf("findExperimentBriefForAdoption() error = %v", err)
+			}
+			if brief.Hypothesis == nil || *brief.Hypothesis != "仮説" {
+				t.Errorf("Hypothesis = %v, want 仮説", brief.Hypothesis)
+			}
+		})
+	}
+}
+
+// 採用可能ブリーフ版単一行。
+func validExperimentBriefingRow() briefingRow {
+	return fakeBriefingRow{values: []any{
+		"目的",
+		nil,
+		`["prompt A","prompt B"]`,
+		"基準",
+		"環境",
+		"初期入力",
+	}}
 }
 
 // SQLite実験ブリーフ会話の並行完了保存。
@@ -1123,8 +1618,13 @@ func briefingReadVersionRows(scenario briefingReadScenario) (driver.Rows, error)
 	return &briefingReadRows{
 		columns: []string{
 			"id",
+			"purpose",
 			"decision",
 			"hypothesis",
+			"candidate_prompts",
+			"evaluation_criteria",
+			"environment_conditions",
+			"initial_input",
 			"success_criteria",
 			"required_conditions",
 			"open_question",
@@ -1132,8 +1632,13 @@ func briefingReadVersionRows(scenario briefingReadScenario) (driver.Rows, error)
 		},
 		values: [][]driver.Value{{
 			"version-1",
+			"purpose",
 			"decision",
 			nil,
+			"[]",
+			"criteria",
+			"conditions",
+			"",
 			"criteria",
 			"conditions",
 			nil,
@@ -1591,14 +2096,15 @@ func fakeBriefingTransactionFactory(transaction briefingTransaction) func(contex
 
 // fakeBriefingTransaction はトランザクション境界のtest double。
 type fakeBriefingTransaction struct {
-	execErrors  []error
-	execCalls   int
-	result      sql.Result
-	results     []sql.Result
-	commitError error
-	onExec      func(int)
-	rows        []briefingRow
-	rowCalls    int
+	execErrors    []error
+	execCalls     int
+	result        sql.Result
+	results       []sql.Result
+	commitError   error
+	onExec        func(int)
+	rows          []briefingRow
+	rowCalls      int
+	rollbackCalls int
 }
 
 // ExecContext は指定済みの実行結果を返却。
@@ -1661,6 +2167,18 @@ func (f fakeBriefingRow) Scan(destinations ...any) error {
 				return errors.New("fake row int conversion failed")
 			}
 			*target = value
+		case *sql.NullString:
+			if f.values[index] == nil {
+				target.Valid = false
+
+				continue
+			}
+			value, ok := f.values[index].(string)
+			if !ok {
+				return errors.New("fake row null string conversion failed")
+			}
+			target.String = value
+			target.Valid = true
 		default:
 			return errors.New("unsupported fake row destination")
 		}
@@ -1675,7 +2193,9 @@ func (f *fakeBriefingTransaction) Commit() error {
 }
 
 // Rollback はロールバックを受理。
-func (*fakeBriefingTransaction) Rollback() error {
+func (f *fakeBriefingTransaction) Rollback() error {
+	f.rollbackCalls++
+
 	return nil
 }
 

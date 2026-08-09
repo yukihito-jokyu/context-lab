@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useExperimentBriefing } from "../hooks/use-experiment-briefing";
+import type { CreateExperimentFromBriefService } from "../services/create-experiment-from-brief-service";
 import type { GetExperimentBriefingService } from "../services/get-experiment-briefing-service";
 import type { SendExperimentBriefMessageService } from "../services/send-experiment-brief-message-service";
 import type { StartExperimentBriefingService } from "../services/start-experiment-briefing-service";
@@ -18,6 +19,7 @@ import { ExperimentBriefingConversation } from "./ExperimentBriefingConversation
 
 type ExperimentBriefingDialogProps = {
   getExperimentBriefing: GetExperimentBriefingService;
+  createExperimentFromBrief: CreateExperimentFromBriefService;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   sendExperimentBriefMessage: SendExperimentBriefMessageService;
@@ -26,6 +28,7 @@ type ExperimentBriefingDialogProps = {
 
 export function ExperimentBriefingDialog({
   getExperimentBriefing,
+  createExperimentFromBrief,
   onOpenChange,
   open,
   sendExperimentBriefMessage,
@@ -35,8 +38,11 @@ export function ExperimentBriefingDialog({
     beginBriefing,
     briefing,
     briefingStart,
+    createError,
+    createExperiment,
     invalidateRefresh,
     isRefreshing,
+    isCreating,
     isSending,
     isStarting,
     refreshBriefing,
@@ -47,6 +53,7 @@ export function ExperimentBriefingDialog({
   } = useExperimentBriefing({
     isOpen: open,
     getExperimentBriefing,
+    createExperimentFromBrief,
     sendExperimentBriefMessage,
     startExperimentBriefing,
   });
@@ -54,7 +61,7 @@ export function ExperimentBriefingDialog({
   return (
     <Dialog
       onOpenChange={(nextOpen) => {
-        if (isStarting || isSending) return;
+        if (isStarting || isSending || isCreating) return;
         if (!nextOpen) invalidateRefresh();
         onOpenChange(nextOpen);
       }}
@@ -103,6 +110,9 @@ export function ExperimentBriefingDialog({
               briefing={briefing}
               hasRefreshError={Boolean(refreshError)}
               isRefreshing={isRefreshing}
+              isCreating={isCreating}
+              createError={createError}
+              onCreate={() => void createExperiment()}
             />
           </div>
         )}

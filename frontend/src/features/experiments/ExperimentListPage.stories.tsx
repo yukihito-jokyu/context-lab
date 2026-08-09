@@ -53,6 +53,9 @@ const success = {
 const sendBriefingMessage = async () => ({
   data: { operationId: "operation-2" },
 });
+const createExperimentFromBrief = async () => ({
+  data: { experimentId: "EXP-015", state: "preparing" },
+});
 
 const meta = {
   component: ExperimentListPage,
@@ -63,6 +66,7 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {
   args: {
+    createExperimentFromBrief,
     listExperiments: async () => success,
     getExperimentBriefing: async () => ({ data: briefing }),
     sendExperimentBriefMessage: sendBriefingMessage,
@@ -73,6 +77,7 @@ export const Default: Story = {
 };
 export const Empty: Story = {
   args: {
+    createExperimentFromBrief,
     listExperiments: async () => ({
       data: {
         experiments: [],
@@ -90,6 +95,7 @@ export const Empty: Story = {
 };
 export const Loading: Story = {
   args: {
+    createExperimentFromBrief,
     listExperiments: () => new Promise(() => {}),
     getExperimentBriefing: async () => ({ data: briefing }),
     sendExperimentBriefMessage: sendBriefingMessage,
@@ -100,6 +106,7 @@ export const Loading: Story = {
 };
 export const LoadError: Story = {
   args: {
+    createExperimentFromBrief,
     listExperiments: async () => ({
       error: {
         code: "UNAVAILABLE",
@@ -116,6 +123,7 @@ export const LoadError: Story = {
 
 export const BriefingPending: Story = {
   args: {
+    createExperimentFromBrief,
     listExperiments: async () => success,
     getExperimentBriefing: async () => ({ data: briefing }),
     sendExperimentBriefMessage: sendBriefingMessage,
@@ -128,6 +136,7 @@ export const BriefingPending: Story = {
 
 export const BriefingError: Story = {
   args: {
+    createExperimentFromBrief,
     listExperiments: async () => success,
     getExperimentBriefing: async () => ({ data: briefing }),
     sendExperimentBriefMessage: sendBriefingMessage,
@@ -145,6 +154,7 @@ export const BriefingError: Story = {
 
 export const BriefingRefreshPending: Story = {
   args: {
+    createExperimentFromBrief,
     listExperiments: async () => success,
     startExperimentBriefing: async () => ({
       data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
@@ -159,6 +169,7 @@ export const BriefingRefreshPending: Story = {
 
 export const BriefingRefreshError: Story = {
   args: {
+    createExperimentFromBrief,
     listExperiments: async () => success,
     startExperimentBriefing: async () => ({
       data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
@@ -178,6 +189,7 @@ export const BriefingRefreshError: Story = {
 
 export const BriefingMessagePending: Story = {
   args: {
+    createExperimentFromBrief,
     listExperiments: async () => success,
     startExperimentBriefing: async () => ({
       data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
@@ -205,6 +217,7 @@ export const BriefingMessagePending: Story = {
 
 export const BriefingMessageCloseBlocked: Story = {
   args: {
+    createExperimentFromBrief,
     listExperiments: async () => success,
     startExperimentBriefing: async () => ({
       data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
@@ -229,6 +242,7 @@ export const BriefingMessageCloseBlocked: Story = {
 
 export const BriefingMessageValidationError: Story = {
   args: {
+    createExperimentFromBrief,
     listExperiments: async () => success,
     startExperimentBriefing: async () => ({
       data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
@@ -250,6 +264,7 @@ export const BriefingMessageValidationError: Story = {
 
 export const BriefingMessageError: Story = {
   args: {
+    createExperimentFromBrief,
     listExperiments: async () => success,
     startExperimentBriefing: async () => ({
       data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
@@ -284,6 +299,7 @@ export const BriefingMessageError: Story = {
 
 export const BriefingMessageSuccess: Story = {
   args: {
+    createExperimentFromBrief,
     listExperiments: async () => success,
     startExperimentBriefing: async () => ({
       data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
@@ -308,5 +324,96 @@ export const BriefingMessageSuccess: Story = {
       "成功条件を先に決めたいです。",
     );
     await expect(args.getExperimentBriefing).toHaveBeenCalledTimes(2);
+  },
+};
+
+const completeBrief = {
+  state: "active",
+  messages: briefing.messages,
+  latestBrief: {
+    versionId: "brief-complete-v1",
+    purpose: "問い合わせ要約の品質を比較する",
+    hypothesis: "制約を明示すると正確性が向上する",
+    candidatePrompts: ["短く要約する", "根拠を保って要約する"],
+    evaluationAxes: "正確性、要点保持",
+    environmentConditions: "同じ入力と評価手順を用いる",
+  },
+  lastConfirmedAt: confirmedAt,
+};
+
+export const BriefIncomplete: Story = {
+  args: {
+    createExperimentFromBrief,
+    listExperiments: async () => success,
+    getExperimentBriefing: async () => ({ data: briefing }),
+    sendExperimentBriefMessage: sendBriefingMessage,
+    startExperimentBriefing: async () => ({
+      data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const body = within(canvasElement.ownerDocument.body);
+    await userEvent.click(canvas.getByRole("button", { name: "新規実験" }));
+    const dialog = await body.findByRole("dialog", { name: "実験設計を開始" });
+    await expect(
+      within(dialog).getByRole("button", {
+        name: "このブリーフを採用して作成",
+      }),
+    ).toBeDisabled();
+  },
+};
+
+export const CreateExperimentPending: Story = {
+  args: {
+    createExperimentFromBrief: () => new Promise(() => {}),
+    listExperiments: async () => success,
+    getExperimentBriefing: async () => ({ data: completeBrief }),
+    sendExperimentBriefMessage: sendBriefingMessage,
+    startExperimentBriefing: async () => ({
+      data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const body = within(canvasElement.ownerDocument.body);
+    await userEvent.click(canvas.getByRole("button", { name: "新規実験" }));
+    const dialog = await body.findByRole("dialog", { name: "実験設計を開始" });
+    await userEvent.click(
+      within(dialog).getByRole("button", {
+        name: "このブリーフを採用して作成",
+      }),
+    );
+    await expect(within(dialog).getByRole("status")).toHaveTextContent(
+      "実験を作成しています…",
+    );
+  },
+};
+
+export const CreateExperimentFailure: Story = {
+  args: {
+    createExperimentFromBrief: async () => ({
+      error: { code: "UNAVAILABLE", message: "実験を作成できませんでした。" },
+    }),
+    listExperiments: async () => success,
+    getExperimentBriefing: async () => ({ data: completeBrief }),
+    sendExperimentBriefMessage: sendBriefingMessage,
+    startExperimentBriefing: async () => ({
+      data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const body = within(canvasElement.ownerDocument.body);
+    await userEvent.click(canvas.getByRole("button", { name: "新規実験" }));
+    const dialog = await body.findByRole("dialog", { name: "実験設計を開始" });
+    await userEvent.click(
+      within(dialog).getByRole("button", {
+        name: "このブリーフを採用して作成",
+      }),
+    );
+    await expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "実験を作成できませんでした。",
+    );
   },
 };

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-
+import type { CreateExperimentFromBriefService } from "../services/create-experiment-from-brief-service";
 import type {
   ExperimentBriefing,
   GetExperimentBriefingService,
@@ -12,6 +12,7 @@ type BriefingError = { code: string; message: string };
 type UseExperimentBriefingOptions = {
   isOpen: boolean;
   getExperimentBriefing: GetExperimentBriefingService;
+  createExperimentFromBrief: CreateExperimentFromBriefService;
   sendExperimentBriefMessage: SendExperimentBriefMessageService;
   startExperimentBriefing: StartExperimentBriefingService;
 };
@@ -19,6 +20,7 @@ type UseExperimentBriefingOptions = {
 export function useExperimentBriefing({
   isOpen,
   getExperimentBriefing,
+  createExperimentFromBrief,
   sendExperimentBriefMessage,
   startExperimentBriefing,
 }: UseExperimentBriefingOptions) {
@@ -34,6 +36,8 @@ export function useExperimentBriefing({
   const [isSending, setIsSending] = useState(false);
   const [sendOperationId, setSendOperationId] = useState<string>();
   const [sendError, setSendError] = useState<BriefingError>();
+  const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState<BriefingError>();
   const hasStartedForOpenRef = useRef(false);
   const refreshGenerationRef = useRef(0);
 
@@ -105,6 +109,8 @@ export function useExperimentBriefing({
       setStartError(undefined);
       setRefreshError(undefined);
       setSendOperationId(undefined);
+      setCreateError(undefined);
+      setIsCreating(false);
       setIsRefreshing(false);
       return;
     }
@@ -162,12 +168,49 @@ export function useExperimentBriefing({
     [briefingStart, isSending, refreshBriefing, sendExperimentBriefMessage],
   );
 
+  const createExperiment = useCallback(async () => {
+    const briefVersionId = briefing?.latestBrief?.versionId;
+    if (!briefingStart || !briefVersionId || isCreating) return;
+
+    setIsCreating(true);
+    setCreateError(undefined);
+    try {
+      const response = await createExperimentFromBrief(
+        crypto.randomUUID(),
+        briefingStart.briefingSessionId,
+        briefVersionId,
+      );
+      if (response.data) {
+        window.location.assign(
+          `/experiments/${encodeURIComponent(response.data.experimentId)}/preparation`,
+        );
+        return;
+      }
+      setCreateError(
+        response.error ?? {
+          code: "UNKNOWN",
+          message: "実験を作成できませんでした。もう一度お試しください。",
+        },
+      );
+    } catch {
+      setCreateError({
+        code: "UNKNOWN",
+        message: "実験を作成できませんでした。もう一度お試しください。",
+      });
+    } finally {
+      setIsCreating(false);
+    }
+  }, [briefing, briefingStart, createExperimentFromBrief, isCreating]);
+
   return {
     beginBriefing,
     briefing,
     briefingStart,
+    createError,
+    createExperiment,
     invalidateRefresh,
     isRefreshing,
+    isCreating,
     isSending,
     isStarting,
     refreshBriefing,
