@@ -17,6 +17,32 @@ type ExperimentBriefingStart struct {
 	FailureCode       string
 }
 
+// ExperimentBriefing は実験ブリーフ画面の再表示に必要な永続状態。
+type ExperimentBriefing struct {
+	State           string
+	Messages        []ExperimentBriefingMessage
+	LatestBrief     *ExperimentBrief
+	LastConfirmedAt time.Time
+}
+
+// ExperimentBriefingMessage は利用者表示用の実験ブリーフ会話。
+type ExperimentBriefingMessage struct {
+	Role       string
+	Content    string
+	SequenceNo int
+	CreatedAt  time.Time
+}
+
+// ExperimentBrief は実験ブリーフの一版。
+type ExperimentBrief struct {
+	VersionID          string
+	Decision           string
+	Hypothesis         *string
+	SuccessCriteria    string
+	RequiredConditions string
+	OpenQuestion       *string
+}
+
 // Experiment は一覧表示に必要な実験の安全な属性。
 type Experiment struct {
 	ID                      string
