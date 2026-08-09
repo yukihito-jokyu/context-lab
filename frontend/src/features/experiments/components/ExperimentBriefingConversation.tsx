@@ -13,6 +13,7 @@ type ExperimentBriefingConversationProps = {
   error?: BriefingError;
   isRefreshing: boolean;
   isSending: boolean;
+  isStopping: boolean;
   onRefresh: () => void;
   onSend: (message: string) => Promise<boolean>;
   sendError?: BriefingError;
@@ -23,6 +24,7 @@ export function ExperimentBriefingConversation({
   error,
   isRefreshing,
   isSending,
+  isStopping,
   onRefresh,
   onSend,
   sendError,
@@ -33,6 +35,7 @@ export function ExperimentBriefingConversation({
 
   const submitMessage = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (isStopping) return;
     const trimmedMessage = message.trim();
     if (!trimmedMessage) {
       setValidationError(true);
@@ -51,7 +54,7 @@ export function ExperimentBriefingConversation({
           実験設計の壁打ち
         </h3>
         <Button
-          disabled={isRefreshing}
+          disabled={isRefreshing || isStopping}
           id="reload-experiment-briefing-button"
           onClick={onRefresh}
           type="button"
@@ -73,7 +76,7 @@ export function ExperimentBriefingConversation({
           <AlertDescription className="space-y-3">
             <p>{error.message}</p>
             <Button
-              disabled={isRefreshing}
+              disabled={isRefreshing || isStopping}
               onClick={onRefresh}
               type="button"
               variant="outline"
@@ -127,7 +130,7 @@ export function ExperimentBriefingConversation({
           aria-describedby={validationError ? "briefing-error" : undefined}
           aria-invalid={validationError}
           className="min-h-24 w-full rounded-md border bg-background p-3 text-sm"
-          disabled={isSending}
+          disabled={isSending || isStopping}
           id="briefing-message-input"
           onChange={(event) => {
             setMessage(event.target.value);
@@ -155,7 +158,7 @@ export function ExperimentBriefingConversation({
           </Alert>
         )}
         <Button
-          disabled={isSending}
+          disabled={isSending || isStopping}
           id="send-briefing-message-button"
           type="submit"
         >

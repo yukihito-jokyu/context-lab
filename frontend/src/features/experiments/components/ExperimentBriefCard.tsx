@@ -7,6 +7,7 @@ type ExperimentBriefCardProps = {
   hasRefreshError: boolean;
   isRefreshing: boolean;
   isCreating: boolean;
+  isStopping: boolean;
   onCreate: () => void;
   createError?: { code: string; message: string };
 };
@@ -16,6 +17,7 @@ export function ExperimentBriefCard({
   hasRefreshError,
   isRefreshing,
   isCreating,
+  isStopping,
   onCreate,
   createError,
 }: ExperimentBriefCardProps) {
@@ -82,7 +84,7 @@ export function ExperimentBriefCard({
         )}
         <button
           className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:pointer-events-none disabled:opacity-50"
-          disabled={!isComplete || isCreating}
+          disabled={!isComplete || isCreating || isStopping}
           id="submit-create-experiment-button"
           onClick={onCreate}
           type="button"

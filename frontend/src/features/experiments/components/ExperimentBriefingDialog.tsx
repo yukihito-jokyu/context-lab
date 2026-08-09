@@ -14,6 +14,7 @@ import type { CreateExperimentFromBriefService } from "../services/create-experi
 import type { GetExperimentBriefingService } from "../services/get-experiment-briefing-service";
 import type { SendExperimentBriefMessageService } from "../services/send-experiment-brief-message-service";
 import type { StartExperimentBriefingService } from "../services/start-experiment-briefing-service";
+import type { StopExperimentBriefingService } from "../services/stop-experiment-briefing-service";
 import { ExperimentBriefCard } from "./ExperimentBriefCard";
 import { ExperimentBriefingConversation } from "./ExperimentBriefingConversation";
 
@@ -24,6 +25,7 @@ type ExperimentBriefingDialogProps = {
   open: boolean;
   sendExperimentBriefMessage: SendExperimentBriefMessageService;
   startExperimentBriefing: StartExperimentBriefingService;
+  stopExperimentBriefing: StopExperimentBriefingService;
 };
 
 export function ExperimentBriefingDialog({
@@ -33,6 +35,7 @@ export function ExperimentBriefingDialog({
   open,
   sendExperimentBriefMessage,
   startExperimentBriefing,
+  stopExperimentBriefing,
 }: ExperimentBriefingDialogProps) {
   const {
     beginBriefing,
@@ -44,30 +47,56 @@ export function ExperimentBriefingDialog({
     isRefreshing,
     isCreating,
     isSending,
+    isStopping,
     isStarting,
     refreshBriefing,
     refreshError,
     sendBriefingMessage,
     sendError,
     startError,
+    stopBriefing,
+    stopError,
   } = useExperimentBriefing({
     isOpen: open,
     getExperimentBriefing,
     createExperimentFromBrief,
     sendExperimentBriefMessage,
     startExperimentBriefing,
+    stopExperimentBriefing,
   });
+
+  const isCloseBlocked = isStarting || isSending || isCreating || isStopping;
+
+  const closeBriefing = async () => {
+    if (await stopBriefing()) {
+      invalidateRefresh();
+      onOpenChange(false);
+    }
+  };
 
   return (
     <Dialog
       onOpenChange={(nextOpen) => {
-        if (isStarting || isSending || isCreating) return;
+        if (isCloseBlocked) return;
+        if (!nextOpen && briefingStart) {
+          void closeBriefing();
+          return;
+        }
         if (!nextOpen) invalidateRefresh();
         onOpenChange(nextOpen);
       }}
       open={open}
     >
-      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-3xl">
+      <DialogContent
+        closeDisabled={isCloseBlocked}
+        className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-3xl"
+        onEscapeKeyDown={(event) => {
+          if (isCloseBlocked) event.preventDefault();
+        }}
+        onPointerDownOutside={(event) => {
+          if (isCloseBlocked) event.preventDefault();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>実験設計を開始</DialogTitle>
           <DialogDescription>
@@ -96,24 +125,60 @@ export function ExperimentBriefingDialog({
           </Alert>
         )}
         {briefingStart && (
-          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(16rem,0.8fr)]">
-            <ExperimentBriefingConversation
-              briefing={briefing}
-              error={refreshError}
-              isRefreshing={isRefreshing}
-              onRefresh={() => void refreshBriefing()}
-              isSending={isSending}
-              onSend={(message) => sendBriefingMessage(message)}
-              sendError={sendError}
-            />
-            <ExperimentBriefCard
-              briefing={briefing}
-              hasRefreshError={Boolean(refreshError)}
-              isRefreshing={isRefreshing}
-              isCreating={isCreating}
-              createError={createError}
-              onCreate={() => void createExperiment()}
-            />
+          <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(16rem,0.8fr)]">
+              <ExperimentBriefingConversation
+                briefing={briefing}
+                error={refreshError}
+                isRefreshing={isRefreshing}
+                onRefresh={() => void refreshBriefing()}
+                isSending={isSending}
+                isStopping={isStopping}
+                onSend={(message) => sendBriefingMessage(message)}
+                sendError={sendError}
+              />
+              <ExperimentBriefCard
+                briefing={briefing}
+                hasRefreshError={Boolean(refreshError)}
+                isRefreshing={isRefreshing}
+                isCreating={isCreating}
+                isStopping={isStopping}
+                createError={createError}
+                onCreate={() => void createExperiment()}
+              />
+            </div>
+            {isStopping && (
+              <p id="briefing-stop-pending" role="status">
+                壁打ちを終了しています…
+              </p>
+            )}
+            {stopError && (
+              <Alert
+                id="briefing-stop-error"
+                role="alert"
+                variant="destructive"
+              >
+                <AlertCircle />
+                <AlertTitle>壁打ちを終了できません</AlertTitle>
+                <AlertDescription className="space-y-4">
+                  <p>{stopError.message}</p>
+                  <Button onClick={() => void closeBriefing()} type="button">
+                    もう一度試す
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+            <div className="flex justify-end">
+              <Button
+                disabled={isCloseBlocked}
+                id="stop-experiment-briefing-button"
+                onClick={() => void closeBriefing()}
+                type="button"
+                variant="outline"
+              >
+                壁打ちを終了
+              </Button>
+            </div>
           </div>
         )}
       </DialogContent>
