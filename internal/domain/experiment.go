@@ -50,12 +50,23 @@ type ExperimentBriefingMessage struct {
 
 // ExperimentBrief は実験ブリーフの一版。
 type ExperimentBrief struct {
-	VersionID          string
-	Decision           string
-	Hypothesis         *string
-	SuccessCriteria    string
-	RequiredConditions string
-	OpenQuestion       *string
+	VersionID             string
+	Purpose               string
+	Decision              string
+	Hypothesis            *string
+	CandidatePrompts      []string
+	EvaluationCriteria    string
+	EnvironmentConditions string
+	InitialInput          string
+	SuccessCriteria       string
+	RequiredConditions    string
+	OpenQuestion          *string
+}
+
+// ExperimentCreation はブリーフ採用で作成した準備中実験。
+type ExperimentCreation struct {
+	ExperimentID string
+	State        string
 }
 
 // Experiment は一覧表示に必要な実験の安全な属性。
