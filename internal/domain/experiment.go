@@ -6,6 +6,7 @@ const (
 	BriefingStartStateStarting = "starting"
 	BriefingStartStateStarted  = "started"
 	BriefingStartStateFailed   = "failed"
+	BriefingStartStateStopped  = "stopped"
 )
 
 // ExperimentBriefingStart は実験ブリーフ開始の永続的な結果。
@@ -19,6 +20,15 @@ type ExperimentBriefingStart struct {
 
 // ExperimentBriefingMessageOperation は実験ブリーフ会話送信の永続的な結果。
 type ExperimentBriefingMessageOperation struct {
+	RequestID         string
+	BriefingSessionID string
+	OperationID       string
+	State             string
+	FailureCode       string
+}
+
+// ExperimentBriefingStopOperation は実験ブリーフ終了の永続的な結果。
+type ExperimentBriefingStopOperation struct {
 	RequestID         string
 	BriefingSessionID string
 	OperationID       string
