@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/yukihito-jokyu/context-lab/internal/domain"
+	apperr "github.com/yukihito-jokyu/context-lab/internal/errors"
 )
 
 var readBriefingRandom = rand.Read
@@ -17,8 +18,39 @@ var readBriefingRandom = rand.Read
 // briefingTransaction は実験ブリーフ記録のトランザクション境界。
 type briefingTransaction interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryRowContext(context.Context, string, ...any) briefingRow
 	Commit() error
 	Rollback() error
+}
+
+// briefingRow はトランザクション内の単一行読み出し境界。
+type briefingRow interface {
+	Scan(...any) error
+}
+
+// sqliteBriefingTransaction はdatabase/sqlトランザクションのadapter。
+type sqliteBriefingTransaction struct {
+	tx *sql.Tx
+}
+
+// ExecContext はSQL実行を委譲。
+func (t sqliteBriefingTransaction) ExecContext(ctx context.Context, query string, arguments ...any) (sql.Result, error) {
+	return t.tx.ExecContext(ctx, query, arguments...)
+}
+
+// QueryRowContext は単一行読み出しを委譲。
+func (t sqliteBriefingTransaction) QueryRowContext(ctx context.Context, query string, arguments ...any) briefingRow {
+	return t.tx.QueryRowContext(ctx, query, arguments...)
+}
+
+// Commit はトランザクション確定を委譲。
+func (t sqliteBriefingTransaction) Commit() error {
+	return t.tx.Commit()
+}
+
+// Rollback はトランザクション取消を委譲。
+func (t sqliteBriefingTransaction) Rollback() error {
+	return t.tx.Rollback()
 }
 
 // BeginExperimentBriefing は開始意図と準備セッションを原子的に保存。
@@ -75,6 +107,178 @@ func (s *Store) BeginExperimentBriefing(ctx context.Context, requestID string) (
 	}
 
 	return start, true, nil
+}
+
+// BeginExperimentBriefMessage は開始済みsessionに紐付く送信意図を原子的に保存。
+func (s *Store) BeginExperimentBriefMessage(ctx context.Context, requestID, briefingSessionID string) (domain.ExperimentBriefingMessageOperation, bool, error) {
+	existing, found, err := s.findExperimentBriefMessageOperation(ctx, requestID)
+	if err != nil {
+		return domain.ExperimentBriefingMessageOperation{}, false, err
+	}
+	if found {
+		if existing.BriefingSessionID != briefingSessionID {
+			return domain.ExperimentBriefingMessageOperation{}, false, fmt.Errorf("briefing message request belongs to another session")
+		}
+
+		return existing, false, nil
+	}
+
+	operationID, err := newBriefingIdentifier()
+	if err != nil {
+		return domain.ExperimentBriefingMessageOperation{}, false, err
+	}
+	operation := domain.ExperimentBriefingMessageOperation{
+		RequestID:         requestID,
+		BriefingSessionID: briefingSessionID,
+		OperationID:       operationID,
+		State:             domain.BriefingStartStateStarting,
+	}
+
+	tx, err := s.beginBriefingTransaction(ctx)
+	if err != nil {
+		return domain.ExperimentBriefingMessageOperation{}, false, fmt.Errorf("begin briefing message: %w", err)
+	}
+	var state string
+	if err := tx.QueryRowContext(ctx, "SELECT state FROM preparation_sessions WHERE id = ? AND kind = ?", briefingSessionID, "experiment_brief").Scan(&state); err != nil {
+		_ = tx.Rollback()
+		if err == sql.ErrNoRows {
+			return domain.ExperimentBriefingMessageOperation{}, false, apperr.New(apperr.CodeBriefingNotFound)
+		}
+
+		return domain.ExperimentBriefingMessageOperation{}, false, fmt.Errorf("find briefing message session: %w", err)
+	}
+	if state != domain.BriefingStartStateStarted {
+		_ = tx.Rollback()
+
+		return domain.ExperimentBriefingMessageOperation{}, false, apperr.New(apperr.CodeBriefingNotActive)
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO briefing_message_operations (id, request_id, preparation_session_id, state) VALUES (?, ?, ?, ?)", operation.OperationID, operation.RequestID, operation.BriefingSessionID, operation.State); err != nil {
+		_ = tx.Rollback()
+		if isBriefingMessageRequestConflict(err) {
+			existing, found, findErr := s.findExperimentBriefMessageOperation(ctx, requestID)
+			if findErr != nil {
+				return domain.ExperimentBriefingMessageOperation{}, false, findErr
+			}
+			if found && existing.BriefingSessionID == briefingSessionID {
+				return existing, false, nil
+			}
+		}
+
+		return domain.ExperimentBriefingMessageOperation{}, false, fmt.Errorf("insert briefing message operation: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.ExperimentBriefingMessageOperation{}, false, fmt.Errorf("commit briefing message: %w", err)
+	}
+
+	return operation, true, nil
+}
+
+// CompleteExperimentBriefMessage は安全な会話と下書き候補を送信完了として保存。
+func (s *Store) CompleteExperimentBriefMessage(ctx context.Context, requestID, message string, result domain.ExperimentBriefingMessageResult) error {
+	s.briefingMessageMu.Lock()
+	defer s.briefingMessageMu.Unlock()
+
+	operation, found, err := s.findExperimentBriefMessageOperation(ctx, requestID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("complete briefing message: request not found")
+	}
+
+	tx, err := s.beginBriefingTransaction(ctx)
+	if err != nil {
+		return fmt.Errorf("begin briefing message completion: %w", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	var nextSequence int
+	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(MAX(sequence_no), 0) + 1 FROM briefing_messages WHERE preparation_session_id = ?", operation.BriefingSessionID).Scan(&nextSequence); err != nil {
+		_ = tx.Rollback()
+
+		return fmt.Errorf("find next briefing message sequence: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO briefing_messages (preparation_session_id, sequence_no, role, content, created_at) VALUES (?, ?, ?, ?, ?)", operation.BriefingSessionID, nextSequence, "user", message, now); err != nil {
+		_ = tx.Rollback()
+
+		return fmt.Errorf("insert user briefing message: %w", err)
+	}
+	if result.AssistantMessage != "" {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO briefing_messages (preparation_session_id, sequence_no, role, content, created_at) VALUES (?, ?, ?, ?, ?)", operation.BriefingSessionID, nextSequence+1, "assistant", result.AssistantMessage, now); err != nil {
+			_ = tx.Rollback()
+
+			return fmt.Errorf("insert assistant briefing message: %w", err)
+		}
+	}
+	if result.Brief != nil {
+		if err := s.insertExperimentBriefVersion(ctx, tx, operation.BriefingSessionID, *result.Brief, now); err != nil {
+			_ = tx.Rollback()
+
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE briefing_message_operations SET state = ?, failure_code = '' WHERE request_id = ?", domain.BriefingStartStateStarted, requestID); err != nil {
+		_ = tx.Rollback()
+
+		return fmt.Errorf("complete briefing message operation: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE preparation_sessions SET updated_at = ? WHERE id = ?", now, operation.BriefingSessionID); err != nil {
+		_ = tx.Rollback()
+
+		return fmt.Errorf("update briefing message session: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit briefing message completion: %w", err)
+	}
+
+	return nil
+}
+
+// FailExperimentBriefMessage は安全な送信失敗を保存。
+func (s *Store) FailExperimentBriefMessage(ctx context.Context, requestID, failureCode string) error {
+	result, err := s.failBriefingMessageOperation(ctx, requestID, failureCode)
+	if err != nil {
+		return fmt.Errorf("fail briefing message operation: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("count failed briefing message operations: %w", err)
+	}
+	if affected != 1 {
+		return fmt.Errorf("fail briefing message operation: request not found")
+	}
+
+	return nil
+}
+
+// findExperimentBriefMessageOperation はrequest IDに対応する送信結果を取得。
+func (s *Store) findExperimentBriefMessageOperation(ctx context.Context, requestID string) (domain.ExperimentBriefingMessageOperation, bool, error) {
+	operation := domain.ExperimentBriefingMessageOperation{RequestID: requestID}
+	err := s.db.QueryRowContext(ctx, "SELECT preparation_session_id, id, state, failure_code FROM briefing_message_operations WHERE request_id = ?", requestID).Scan(&operation.BriefingSessionID, &operation.OperationID, &operation.State, &operation.FailureCode)
+	if err == sql.ErrNoRows {
+		return domain.ExperimentBriefingMessageOperation{}, false, nil
+	}
+	if err != nil {
+		return domain.ExperimentBriefingMessageOperation{}, false, fmt.Errorf("find briefing message operation: %w", err)
+	}
+
+	return operation, true, nil
+}
+
+// insertExperimentBriefVersion は構造化済みのブリーフ候補を一版として保存。
+func (s *Store) insertExperimentBriefVersion(ctx context.Context, tx briefingTransaction, briefingSessionID string, brief domain.ExperimentBrief, createdAt string) error {
+	versionID, err := newBriefingIdentifier()
+	if err != nil {
+		return fmt.Errorf("generate briefing version identifier: %w", err)
+	}
+	var nextVersion int
+	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(MAX(version_no), 0) + 1 FROM briefing_versions WHERE preparation_session_id = ?", briefingSessionID).Scan(&nextVersion); err != nil {
+		return fmt.Errorf("find next briefing version: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO briefing_versions (id, preparation_session_id, version_no, decision, hypothesis, success_criteria, required_conditions, open_question, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", versionID, briefingSessionID, nextVersion, brief.Decision, brief.Hypothesis, brief.SuccessCriteria, brief.RequiredConditions, brief.OpenQuestion, createdAt); err != nil {
+		return fmt.Errorf("insert briefing version: %w", err)
+	}
+
+	return nil
 }
 
 // GetExperimentBriefing は保存済み実験ブリーフを会話順で読み出す。
@@ -271,6 +475,11 @@ func (s *Store) updateExperimentBriefing(ctx context.Context, requestID, state, 
 // isBriefingRequestConflict はrequest IDの一意制約競合を判定。
 func isBriefingRequestConflict(err error) bool {
 	return strings.Contains(err.Error(), "UNIQUE constraint failed: briefing_operations.request_id")
+}
+
+// isBriefingMessageRequestConflict は送信request IDの一意制約競合を判定。
+func isBriefingMessageRequestConflict(err error) bool {
+	return strings.Contains(err.Error(), "UNIQUE constraint failed: briefing_message_operations.request_id")
 }
 
 // newBriefingIdentifier は外部識別子を生成。

@@ -39,8 +39,8 @@ func TestOpen(t *testing.T) {
 				if err := store.db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 					t.Errorf("schema migrations query error = %v", err)
 				}
-				if migrationCount != 3 {
-					t.Errorf("schema migrations count = %d, want %d", migrationCount, 3)
+				if migrationCount != 4 {
+					t.Errorf("schema migrations count = %d, want %d", migrationCount, 4)
 				}
 				if err := store.migrate(context.Background()); err != nil {
 					t.Errorf("migrate() error = %v", err)
@@ -48,8 +48,8 @@ func TestOpen(t *testing.T) {
 				if err := store.db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 					t.Errorf("schema migrations query after migrate error = %v", err)
 				}
-				if migrationCount != 3 {
-					t.Errorf("schema migrations count after migrate = %d, want %d", migrationCount, 3)
+				if migrationCount != 4 {
+					t.Errorf("schema migrations count after migrate = %d, want %d", migrationCount, 4)
 				}
 			},
 		},
