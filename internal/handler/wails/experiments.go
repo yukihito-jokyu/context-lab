@@ -34,6 +34,17 @@ type SendExperimentBriefMessageData struct {
 	OperationID string `json:"operationId"`
 }
 
+// StopExperimentBriefingResponse は実験ブリーフ終了の成功または失敗結果。
+type StopExperimentBriefingResponse struct {
+	Data  *StopExperimentBriefingData `json:"data,omitempty"`
+	Error *ErrorResponse              `json:"error,omitempty"`
+}
+
+// StopExperimentBriefingData は画面へ返す終了操作識別子。
+type StopExperimentBriefingData struct {
+	OperationID string `json:"operationId"`
+}
+
 // CreateExperimentFromBriefResponse はブリーフ採用の成功または失敗結果。
 type CreateExperimentFromBriefResponse struct {
 	Data  *CreateExperimentFromBriefData `json:"data,omitempty"`
@@ -52,18 +63,53 @@ type ExperimentBriefingsHandler struct {
 	sendExperimentBriefMessage *usecase.SendExperimentBriefMessage
 	getExperimentBriefing      *usecase.GetExperimentBriefing
 	createExperimentFromBrief  *usecase.CreateExperimentFromBrief
+	stopExperimentBriefing     *usecase.StopExperimentBriefing
 	logger                     logger.Logger
 }
 
 // 実験ブリーフ開始binding生成。
-func NewExperimentBriefingsHandler(startExperimentBriefing *usecase.StartExperimentBriefing, sendExperimentBriefMessage *usecase.SendExperimentBriefMessage, getExperimentBriefing *usecase.GetExperimentBriefing, createExperimentFromBrief *usecase.CreateExperimentFromBrief, appLogger logger.Logger) *ExperimentBriefingsHandler {
-	return &ExperimentBriefingsHandler{
+func NewExperimentBriefingsHandler(startExperimentBriefing *usecase.StartExperimentBriefing, sendExperimentBriefMessage *usecase.SendExperimentBriefMessage, getExperimentBriefing *usecase.GetExperimentBriefing, createExperimentFromBrief *usecase.CreateExperimentFromBrief, appLogger logger.Logger, stopExperimentBriefing ...*usecase.StopExperimentBriefing) *ExperimentBriefingsHandler {
+	handler := &ExperimentBriefingsHandler{
 		startExperimentBriefing:    startExperimentBriefing,
 		sendExperimentBriefMessage: sendExperimentBriefMessage,
 		getExperimentBriefing:      getExperimentBriefing,
 		createExperimentFromBrief:  createExperimentFromBrief,
 		logger:                     appLogger,
 	}
+	if len(stopExperimentBriefing) != 0 {
+		handler.stopExperimentBriefing = stopExperimentBriefing[0]
+	}
+
+	return handler
+}
+
+// StopExperimentBriefing は実験ブリーフ終了を画面向けDTOで返す。
+func (h *ExperimentBriefingsHandler) StopExperimentBriefing(requestID, briefingSessionID string) StopExperimentBriefingResponse {
+	ctx := context.Background()
+	h.logger.Info(ctx, "stop experiment briefing called")
+
+	operation, err := h.stopExperimentBriefing.Execute(ctx, requestID, briefingSessionID)
+	if err != nil {
+		response := failStopExperimentBriefing(err)
+		h.logger.ErrorCode(ctx, "stop experiment briefing failed", response.Error.Code, slog.String("operation", "stop_experiment_briefing"))
+
+		return response
+	}
+
+	return StopExperimentBriefingResponse{Data: &StopExperimentBriefingData{OperationID: operation.OperationID}}
+}
+
+// failStopExperimentBriefing は内部エラーを安全な画面エラーへ変換。
+func failStopExperimentBriefing(err error) StopExperimentBriefingResponse {
+	appErr := apperr.As(err)
+	if appErr == nil {
+		appErr = apperr.NewUnexpected(err)
+	}
+
+	return StopExperimentBriefingResponse{Error: &ErrorResponse{
+		Code:    string(appErr.Code),
+		Message: appErr.Error(),
+	}}
 }
 
 // 採用済みブリーフからの準備中実験画面DTO返却。
