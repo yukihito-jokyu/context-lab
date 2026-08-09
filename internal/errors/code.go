@@ -11,6 +11,9 @@ const (
 	CodeBriefingStartPending   Code = "EXPERIMENT_BRIEFING_PENDING"
 	CodeBriefingNotFound       Code = "EXPERIMENT_BRIEFING_NOT_FOUND"
 	CodeBriefingLoadFailed     Code = "EXPERIMENT_BRIEFING_UNAVAILABLE"
+	CodeBriefingMessageFailed  Code = "EXPERIMENT_BRIEFING_MESSAGE_UNAVAILABLE"
+	CodeBriefingNotActive      Code = "EXPERIMENT_BRIEFING_NOT_ACTIVE"
+	CodeBriefingMessagePending Code = "EXPERIMENT_BRIEFING_MESSAGE_PENDING"
 	CodeOperationTimeout       Code = "OPERATION_TIMEOUT"
 	CodeOperationCanceled      Code = "OPERATION_CANCELED"
 	CodeUnexpected             Code = "UNEXPECTED"
@@ -24,6 +27,9 @@ var defaultMessages = map[Code]message{
 	CodeBriefingStartPending:   "実験ブリーフの開始を確認中です",
 	CodeBriefingNotFound:       "実験ブリーフが見つかりません",
 	CodeBriefingLoadFailed:     "実験ブリーフを取得できませんでした",
+	CodeBriefingMessageFailed:  "実験ブリーフへメッセージを送信できませんでした",
+	CodeBriefingNotActive:      "実験ブリーフは送信できる状態ではありません",
+	CodeBriefingMessagePending: "実験ブリーフのメッセージ送信を確認中です",
 	CodeOperationTimeout:       "実験一覧の取得がタイムアウトしました",
 	CodeOperationCanceled:      "実験一覧の取得を中止しました",
 	CodeUnexpected:             "予期しないエラーが発生しました",
