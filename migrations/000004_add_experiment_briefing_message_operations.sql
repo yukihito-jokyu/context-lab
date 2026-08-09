@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS briefing_message_operations (
+    id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL UNIQUE,
+    preparation_session_id TEXT NOT NULL,
+    state TEXT NOT NULL,
+    failure_code TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (preparation_session_id) REFERENCES preparation_sessions(id)
+);
