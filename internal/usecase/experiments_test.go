@@ -404,3 +404,275 @@ type fakeExperimentReader struct {
 func (f fakeExperimentReader) ListExperiments(context.Context) (domain.ExperimentCollection, error) {
 	return f.collection, f.err
 }
+
+// SendExperimentBriefMessageの入力検証と冪等送信。
+func TestSendExperimentBriefMessageExecute(t *testing.T) {
+	tests := []struct {
+		name        string
+		requestID   string
+		sessionID   string
+		message     string
+		senderError error
+		wantCode    apperr.Code
+		wantCalls   int
+	}{
+		{
+			name:      "空白入力を拒否する",
+			requestID: "request-1",
+			sessionID: "session-1",
+			message:   " ",
+			wantCode:  apperr.CodeBriefingRequestInvalid,
+		},
+		{
+			name:        "ACP未準備を安全に返し新requestで再送可能にする",
+			requestID:   "request-2",
+			sessionID:   "session-1",
+			message:     "目的を確認したい",
+			senderError: apperr.New(apperr.CodeACPNotReady),
+			wantCode:    apperr.CodeACPNotReady,
+			wantCalls:   1,
+		},
+		{
+			name:      "同じrequestで既存operationを返す",
+			requestID: "request-3",
+			sessionID: "session-1",
+			message:   "目的を確認したい",
+			wantCalls: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newFakeBriefingMessageStore()
+			sender := &fakeBriefingMessageSender{err: tt.senderError}
+			usecase := NewSendExperimentBriefMessage(store, sender)
+
+			got, err := usecase.Execute(context.Background(), tt.requestID, tt.sessionID, tt.message)
+			if tt.wantCode != "" {
+				assertBriefingErrorCode(t, err, tt.wantCode)
+				if got.OperationID != "" {
+					t.Errorf("OperationID = %q, want empty", got.OperationID)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("Execute() error = %v", err)
+				}
+				second, secondErr := usecase.Execute(context.Background(), tt.requestID, tt.sessionID, tt.message)
+				if secondErr != nil {
+					t.Fatalf("second Execute() error = %v", secondErr)
+				}
+				if second.OperationID != got.OperationID {
+					t.Errorf("second OperationID = %q, want %q", second.OperationID, got.OperationID)
+				}
+			}
+			if got := sender.calls; got != tt.wantCalls {
+				t.Errorf("SendExperimentBriefMessage() calls = %d, want %d", got, tt.wantCalls)
+			}
+		})
+	}
+}
+
+// fakeBriefingMessageStore は会話送信portのtest double。
+type fakeBriefingMessageStore struct {
+	operations map[string]domain.ExperimentBriefingMessageOperation
+}
+
+// newFakeBriefingMessageStore は会話送信test doubleを生成。
+func newFakeBriefingMessageStore() *fakeBriefingMessageStore {
+	return &fakeBriefingMessageStore{operations: make(map[string]domain.ExperimentBriefingMessageOperation)}
+}
+
+// BeginExperimentBriefMessage は送信操作を生成または再利用。
+func (f *fakeBriefingMessageStore) BeginExperimentBriefMessage(_ context.Context, requestID, briefingSessionID string) (domain.ExperimentBriefingMessageOperation, bool, error) {
+	if operation, found := f.operations[requestID]; found {
+		return operation, false, nil
+	}
+	operation := domain.ExperimentBriefingMessageOperation{
+		RequestID:         requestID,
+		BriefingSessionID: briefingSessionID,
+		OperationID:       "operation-" + requestID,
+		State:             domain.BriefingStartStateStarting,
+	}
+	f.operations[requestID] = operation
+
+	return operation, true, nil
+}
+
+// CompleteExperimentBriefMessage は送信完了を記録。
+func (f *fakeBriefingMessageStore) CompleteExperimentBriefMessage(_ context.Context, requestID, _ string, _ domain.ExperimentBriefingMessageResult) error {
+	operation := f.operations[requestID]
+	operation.State = domain.BriefingStartStateStarted
+	f.operations[requestID] = operation
+
+	return nil
+}
+
+// FailExperimentBriefMessage は送信失敗を記録。
+func (f *fakeBriefingMessageStore) FailExperimentBriefMessage(_ context.Context, requestID, failureCode string) error {
+	operation := f.operations[requestID]
+	operation.State = domain.BriefingStartStateFailed
+	operation.FailureCode = failureCode
+	f.operations[requestID] = operation
+
+	return nil
+}
+
+// fakeBriefingMessageSender は会話送信portのtest double。
+type fakeBriefingMessageSender struct {
+	err   error
+	calls int
+}
+
+// SendExperimentBriefMessage は指定済み応答を返却。
+func (f *fakeBriefingMessageSender) SendExperimentBriefMessage(context.Context, string, string, string) (domain.ExperimentBriefingMessageResult, error) {
+	f.calls++
+
+	return domain.ExperimentBriefingMessageResult{}, f.err
+}
+
+// SendExperimentBriefMessageの失敗分岐。
+func TestSendExperimentBriefMessageExecuteFailures(t *testing.T) {
+	tests := []struct {
+		name       string
+		store      briefingMessageStoreScenario
+		senderErr  error
+		wantCode   apperr.Code
+		wantFailed bool
+	}{
+		{
+			name: "開始記録の通常失敗を変換する",
+			store: briefingMessageStoreScenario{
+				beginErr: errors.New("store unavailable"),
+			},
+			wantCode: apperr.CodeBriefingMessageFailed,
+		},
+		{
+			name: "開始記録の安全な失敗を保持する",
+			store: briefingMessageStoreScenario{
+				beginErr: apperr.New(apperr.CodeBriefingNotFound),
+			},
+			wantCode: apperr.CodeBriefingNotFound,
+		},
+		{
+			name: "既存失敗を復元する",
+			store: briefingMessageStoreScenario{
+				operation: domain.ExperimentBriefingMessageOperation{
+					State:       domain.BriefingStartStateFailed,
+					FailureCode: string(apperr.CodeBriefingNotActive),
+				},
+			},
+			wantCode: apperr.CodeBriefingNotActive,
+		},
+		{
+			name: "既存送信中を返す",
+			store: briefingMessageStoreScenario{
+				operation: domain.ExperimentBriefingMessageOperation{State: domain.BriefingStartStateStarting},
+			},
+			wantCode: apperr.CodeBriefingMessagePending,
+		},
+		{
+			name: "送信失敗の記録失敗を変換する",
+			store: briefingMessageStoreScenario{
+				failErr: errors.New("mark unavailable"),
+			},
+			senderErr:  errors.New("ACP unavailable"),
+			wantCode:   apperr.CodeBriefingMessageFailed,
+			wantFailed: true,
+		},
+		{
+			name: "完了記録失敗を変換する",
+			store: briefingMessageStoreScenario{
+				completeErr: errors.New("save unavailable"),
+			},
+			wantCode: apperr.CodeBriefingMessageFailed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := tt.store
+			sender := fakeBriefingMessageSender{err: tt.senderErr}
+			usecase := NewSendExperimentBriefMessage(&store, &sender)
+
+			_, err := usecase.Execute(context.Background(), "request-1", "session-1", "message")
+			assertBriefingErrorCode(t, err, tt.wantCode)
+			if got := store.failed; got != tt.wantFailed {
+				t.Errorf("failed = %v, want %v", got, tt.wantFailed)
+			}
+		})
+	}
+}
+
+// briefingMessageStoreScenario は会話送信失敗再現用port。
+type briefingMessageStoreScenario struct {
+	operation   domain.ExperimentBriefingMessageOperation
+	beginErr    error
+	completeErr error
+	failErr     error
+	failed      bool
+}
+
+// BeginExperimentBriefMessage は指定済み送信開始結果を返却。
+func (s *briefingMessageStoreScenario) BeginExperimentBriefMessage(_ context.Context, requestID, briefingSessionID string) (domain.ExperimentBriefingMessageOperation, bool, error) {
+	if s.beginErr != nil {
+		return domain.ExperimentBriefingMessageOperation{}, false, s.beginErr
+	}
+	if s.operation.State != "" {
+		return s.operation, false, nil
+	}
+
+	return domain.ExperimentBriefingMessageOperation{
+		RequestID:         requestID,
+		BriefingSessionID: briefingSessionID,
+		OperationID:       "operation-1",
+		State:             domain.BriefingStartStateStarting,
+	}, true, nil
+}
+
+// CompleteExperimentBriefMessage は指定済み完了記録結果を返却。
+func (s *briefingMessageStoreScenario) CompleteExperimentBriefMessage(context.Context, string, string, domain.ExperimentBriefingMessageResult) error {
+	return s.completeErr
+}
+
+// FailExperimentBriefMessage は指定済み失敗記録結果を返却。
+func (s *briefingMessageStoreScenario) FailExperimentBriefMessage(context.Context, string, string) error {
+	s.failed = true
+
+	return s.failErr
+}
+
+// briefingMessageFailureの安全な失敗復元。
+func TestBriefingMessageFailure(t *testing.T) {
+	tests := []struct {
+		name string
+		code string
+		want apperr.Code
+	}{
+		{
+			name: "ACP未準備を復元する",
+			code: string(apperr.CodeACPNotReady),
+			want: apperr.CodeACPNotReady,
+		},
+		{
+			name: "非開始を復元する",
+			code: string(apperr.CodeBriefingNotActive),
+			want: apperr.CodeBriefingNotActive,
+		},
+		{
+			name: "不正入力を復元する",
+			code: string(apperr.CodeBriefingRequestInvalid),
+			want: apperr.CodeBriefingRequestInvalid,
+		},
+		{
+			name: "未知の失敗を正規化する",
+			code: "UNKNOWN",
+			want: apperr.CodeBriefingMessageFailed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertBriefingErrorCode(t, briefingMessageFailure(tt.code), tt.want)
+		})
+	}
+}
