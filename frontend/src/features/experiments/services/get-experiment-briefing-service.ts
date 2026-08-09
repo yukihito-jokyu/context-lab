@@ -12,10 +12,17 @@ export type ExperimentBriefing = {
   messages: ExperimentBriefingMessage[];
   latestBrief?: {
     versionId: string;
-    decision: string;
+    purpose?: string;
     hypothesis?: string;
-    successCriteria: string;
-    requiredConditions: string;
+    candidatePrompts?: string[];
+    evaluationAxes?: string;
+    environmentConditions?: string;
+    /** @deprecated WI-005より前の保存済み下書きとの表示互換用。 */
+    decision?: string;
+    /** @deprecated WI-005より前の保存済み下書きとの表示互換用。 */
+    successCriteria?: string;
+    /** @deprecated WI-005より前の保存済み下書きとの表示互換用。 */
+    requiredConditions?: string;
     openQuestion?: string;
   };
   lastConfirmedAt: string;
