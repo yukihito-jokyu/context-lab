@@ -107,6 +107,39 @@ type ExperimentBriefingReader interface {
 	GetExperimentBriefing(context.Context, string) (domain.ExperimentBriefing, bool, error)
 }
 
+// ExperimentBriefCreator は採用済みブリーフから準備中実験を作成するport。
+type ExperimentBriefCreator interface {
+	CreateExperimentFromBrief(context.Context, string, string, string) (domain.ExperimentCreation, bool, error)
+}
+
+// CreateExperimentFromBrief は実験ブリーフ採用command。
+type CreateExperimentFromBrief struct {
+	creator ExperimentBriefCreator
+}
+
+// 実験ブリーフ採用command生成。
+func NewCreateExperimentFromBrief(creator ExperimentBriefCreator) *CreateExperimentFromBrief {
+	return &CreateExperimentFromBrief{creator: creator}
+}
+
+// 採用ブリーフ版からの準備中実験作成。
+func (u *CreateExperimentFromBrief) Execute(ctx context.Context, requestID, briefingSessionID, briefVersionID string) (domain.ExperimentCreation, error) {
+	if strings.TrimSpace(requestID) == "" || strings.TrimSpace(briefingSessionID) == "" || strings.TrimSpace(briefVersionID) == "" {
+		return domain.ExperimentCreation{}, apperr.New(apperr.CodeBriefingRequestInvalid)
+	}
+
+	creation, _, err := u.creator.CreateExperimentFromBrief(ctx, strings.TrimSpace(requestID), strings.TrimSpace(briefingSessionID), strings.TrimSpace(briefVersionID))
+	if err != nil {
+		if appErr := apperr.As(err); appErr != nil {
+			return domain.ExperimentCreation{}, appErr
+		}
+
+		return domain.ExperimentCreation{}, apperr.Wrap(apperr.CodeExperimentCreateFailed, err)
+	}
+
+	return creation, nil
+}
+
 // GetExperimentBriefing は実験ブリーフ画面の再読込query。
 type GetExperimentBriefing struct {
 	reader ExperimentBriefingReader
