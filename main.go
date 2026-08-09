@@ -50,6 +50,7 @@ func main() {
 		usecase.NewStartExperimentBriefing(store, acp.NotReadyBriefingStarter{}),
 		usecase.NewSendExperimentBriefMessage(store, acp.NotReadyBriefingMessageSender{}),
 		usecase.NewGetExperimentBriefing(store),
+		usecase.NewCreateExperimentFromBrief(store),
 		appLogger,
 	)
 

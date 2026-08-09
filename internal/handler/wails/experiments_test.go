@@ -38,7 +38,7 @@ func TestExperimentBriefingsHandlerStartExperimentBriefing(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &handlerBriefingStore{beginErr: tt.storeErr}
-			handler := NewExperimentBriefingsHandler(usecase.NewStartExperimentBriefing(store, handlerBriefingStarter{}), usecase.NewSendExperimentBriefMessage(store, handlerBriefingMessageSender{}), usecase.NewGetExperimentBriefing(store), newTestLogger())
+			handler := NewExperimentBriefingsHandler(usecase.NewStartExperimentBriefing(store, handlerBriefingStarter{}), usecase.NewSendExperimentBriefMessage(store, handlerBriefingMessageSender{}), usecase.NewGetExperimentBriefing(store), usecase.NewCreateExperimentFromBrief(store), newTestLogger())
 
 			got := handler.StartExperimentBriefing(tt.requestID)
 			if tt.wantCode != "" {
@@ -77,6 +77,7 @@ func TestExperimentBriefingsHandlerSendExperimentBriefMessage(t *testing.T) {
 		usecase.NewStartExperimentBriefing(store, handlerBriefingStarter{}),
 		usecase.NewSendExperimentBriefMessage(store, handlerBriefingMessageSender{}),
 		usecase.NewGetExperimentBriefing(store),
+		usecase.NewCreateExperimentFromBrief(store),
 		newTestLogger(),
 	)
 
@@ -92,6 +93,81 @@ func TestExperimentBriefingsHandlerSendExperimentBriefMessage(t *testing.T) {
 	}
 }
 
+// Wails実験ブリーフ採用の成功と安全な失敗返却。
+func TestExperimentBriefingsHandlerCreateExperimentFromBrief(t *testing.T) {
+	tests := []struct {
+		name      string
+		createErr error
+		wantCode  apperr.Code
+	}{
+		{
+			name: "準備中実験を返す",
+		},
+		{
+			name:      "内部エラーを安全に返す",
+			createErr: errors.New("private database detail"),
+			wantCode:  apperr.CodeExperimentCreateFailed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &handlerBriefingStore{
+				createErr: tt.createErr,
+			}
+			handler := NewExperimentBriefingsHandler(usecase.NewStartExperimentBriefing(store, handlerBriefingStarter{}), usecase.NewSendExperimentBriefMessage(store, handlerBriefingMessageSender{}), usecase.NewGetExperimentBriefing(store), usecase.NewCreateExperimentFromBrief(store), newTestLogger())
+
+			got := handler.CreateExperimentFromBrief("request-1", "session-1", "version-1")
+			if tt.wantCode != "" {
+				if got.Error == nil {
+					t.Fatal("Error = nil, want safe error")
+				}
+				if got.Error.Code != string(tt.wantCode) {
+					t.Errorf("Error.Code = %q, want %q", got.Error.Code, tt.wantCode)
+				}
+
+				return
+			}
+			if got.Error != nil {
+				t.Fatalf("Error = %+v, want nil", got.Error)
+			}
+			if got.Data == nil {
+				t.Fatal("Data = nil, want experiment")
+			}
+			if got.Data.ExperimentID != "experiment-1" || got.Data.State != "preparing" {
+				t.Errorf("Data = %+v, want preparing experiment", got.Data)
+			}
+		})
+	}
+}
+
+// 実験ブリーフ採用失敗の安全な変換。
+func TestFailCreateExperimentFromBrief(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantCode apperr.Code
+	}{
+		{
+			name:     "想定外エラーを安全に変換する",
+			err:      errors.New("private database detail"),
+			wantCode: apperr.CodeUnexpected,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := failCreateExperimentFromBrief(tt.err)
+			if got.Error == nil {
+				t.Fatal("Error = nil, want safe error")
+			}
+			if got.Error.Code != string(tt.wantCode) {
+				t.Errorf("Error.Code = %q, want %q", got.Error.Code, tt.wantCode)
+			}
+		})
+	}
+}
+
 // Wails実験ブリーフ会話送信の安全な失敗返却。
 func TestExperimentBriefingsHandlerSendExperimentBriefMessageFailure(t *testing.T) {
 	store := &handlerBriefingStore{}
@@ -99,6 +175,7 @@ func TestExperimentBriefingsHandlerSendExperimentBriefMessageFailure(t *testing.
 		usecase.NewStartExperimentBriefing(store, handlerBriefingStarter{}),
 		usecase.NewSendExperimentBriefMessage(store, handlerBriefingMessageSender{err: errors.New("private ACP credential")}),
 		usecase.NewGetExperimentBriefing(store),
+		usecase.NewCreateExperimentFromBrief(store),
 		newTestLogger(),
 	)
 
@@ -268,6 +345,7 @@ func TestExperimentBriefingsHandlerGetExperimentBriefing(t *testing.T) {
 				usecase.NewStartExperimentBriefing(&tt.store, handlerBriefingStarter{}),
 				usecase.NewSendExperimentBriefMessage(&tt.store, handlerBriefingMessageSender{}),
 				usecase.NewGetExperimentBriefing(&tt.store),
+				usecase.NewCreateExperimentFromBrief(&tt.store),
 				newTestLogger(),
 			)
 
@@ -313,10 +391,23 @@ func TestExperimentBriefingsHandlerGetExperimentBriefing(t *testing.T) {
 
 // handlerBriefingStore はhandler用開始記録portのtest double。
 type handlerBriefingStore struct {
-	beginErr error
-	briefing domain.ExperimentBriefing
-	getErr   error
-	found    bool
+	beginErr  error
+	briefing  domain.ExperimentBriefing
+	getErr    error
+	createErr error
+	found     bool
+}
+
+// 指定済み採用結果返却。
+func (s *handlerBriefingStore) CreateExperimentFromBrief(context.Context, string, string, string) (domain.ExperimentCreation, bool, error) {
+	if s.createErr != nil {
+		return domain.ExperimentCreation{}, false, s.createErr
+	}
+
+	return domain.ExperimentCreation{
+		ExperimentID: "experiment-1",
+		State:        "preparing",
+	}, true, nil
 }
 
 // GetExperimentBriefing は指定済み実験ブリーフを返却。

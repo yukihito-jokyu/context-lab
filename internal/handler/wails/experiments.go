@@ -34,22 +34,68 @@ type SendExperimentBriefMessageData struct {
 	OperationID string `json:"operationId"`
 }
 
+// CreateExperimentFromBriefResponse はブリーフ採用の成功または失敗結果。
+type CreateExperimentFromBriefResponse struct {
+	Data  *CreateExperimentFromBriefData `json:"data,omitempty"`
+	Error *ErrorResponse                 `json:"error,omitempty"`
+}
+
+// CreateExperimentFromBriefData は画面へ返す準備中実験の識別子と状態。
+type CreateExperimentFromBriefData struct {
+	ExperimentID string `json:"experimentId"`
+	State        string `json:"state"`
+}
+
 // ExperimentBriefingsHandler は実験ブリーフ開始のWails binding。
 type ExperimentBriefingsHandler struct {
 	startExperimentBriefing    *usecase.StartExperimentBriefing
 	sendExperimentBriefMessage *usecase.SendExperimentBriefMessage
 	getExperimentBriefing      *usecase.GetExperimentBriefing
+	createExperimentFromBrief  *usecase.CreateExperimentFromBrief
 	logger                     logger.Logger
 }
 
-// NewExperimentBriefingsHandler は実験ブリーフ開始bindingを生成。
-func NewExperimentBriefingsHandler(startExperimentBriefing *usecase.StartExperimentBriefing, sendExperimentBriefMessage *usecase.SendExperimentBriefMessage, getExperimentBriefing *usecase.GetExperimentBriefing, appLogger logger.Logger) *ExperimentBriefingsHandler {
+// 実験ブリーフ開始binding生成。
+func NewExperimentBriefingsHandler(startExperimentBriefing *usecase.StartExperimentBriefing, sendExperimentBriefMessage *usecase.SendExperimentBriefMessage, getExperimentBriefing *usecase.GetExperimentBriefing, createExperimentFromBrief *usecase.CreateExperimentFromBrief, appLogger logger.Logger) *ExperimentBriefingsHandler {
 	return &ExperimentBriefingsHandler{
 		startExperimentBriefing:    startExperimentBriefing,
 		sendExperimentBriefMessage: sendExperimentBriefMessage,
 		getExperimentBriefing:      getExperimentBriefing,
+		createExperimentFromBrief:  createExperimentFromBrief,
 		logger:                     appLogger,
 	}
+}
+
+// 採用済みブリーフからの準備中実験画面DTO返却。
+func (h *ExperimentBriefingsHandler) CreateExperimentFromBrief(requestID, briefingSessionID, briefVersionID string) CreateExperimentFromBriefResponse {
+	ctx := context.Background()
+	h.logger.Info(ctx, "create experiment from brief called")
+
+	creation, err := h.createExperimentFromBrief.Execute(ctx, requestID, briefingSessionID, briefVersionID)
+	if err != nil {
+		response := failCreateExperimentFromBrief(err)
+		h.logger.ErrorCode(ctx, "create experiment from brief failed", response.Error.Code, slog.String("operation", "create_experiment_from_brief"))
+
+		return response
+	}
+
+	return CreateExperimentFromBriefResponse{Data: &CreateExperimentFromBriefData{
+		ExperimentID: creation.ExperimentID,
+		State:        creation.State,
+	}}
+}
+
+// 内部エラーから安全な採用画面エラー変換。
+func failCreateExperimentFromBrief(err error) CreateExperimentFromBriefResponse {
+	appErr := apperr.As(err)
+	if appErr == nil {
+		appErr = apperr.NewUnexpected(err)
+	}
+
+	return CreateExperimentFromBriefResponse{Error: &ErrorResponse{
+		Code:    string(appErr.Code),
+		Message: appErr.Error(),
+	}}
 }
 
 // SendExperimentBriefMessage は実験ブリーフ会話送信を画面向けDTOで返す。
@@ -105,12 +151,17 @@ type ExperimentMessageResponse struct {
 
 // ExperimentBriefResponse は画面表示用実験ブリーフ版。
 type ExperimentBriefResponse struct {
-	VersionID          string  `json:"versionId"`
-	Decision           string  `json:"decision"`
-	Hypothesis         *string `json:"hypothesis,omitempty"`
-	SuccessCriteria    string  `json:"successCriteria"`
-	RequiredConditions string  `json:"requiredConditions"`
-	OpenQuestion       *string `json:"openQuestion,omitempty"`
+	VersionID             string   `json:"versionId"`
+	Purpose               string   `json:"purpose"`
+	Decision              string   `json:"decision"`
+	Hypothesis            *string  `json:"hypothesis,omitempty"`
+	CandidatePrompts      []string `json:"candidatePrompts"`
+	EvaluationCriteria    string   `json:"evaluationAxes"`
+	EnvironmentConditions string   `json:"environmentConditions"`
+	InitialInput          string   `json:"initialInput"`
+	SuccessCriteria       string   `json:"successCriteria"`
+	RequiredConditions    string   `json:"requiredConditions"`
+	OpenQuestion          *string  `json:"openQuestion,omitempty"`
 }
 
 // GetExperimentBriefing は実験ブリーフを画面向けDTOで返す。
@@ -171,12 +222,17 @@ func toExperimentBriefResponse(brief *domain.ExperimentBrief) *ExperimentBriefRe
 	}
 
 	return &ExperimentBriefResponse{
-		VersionID:          brief.VersionID,
-		Decision:           brief.Decision,
-		Hypothesis:         brief.Hypothesis,
-		SuccessCriteria:    brief.SuccessCriteria,
-		RequiredConditions: brief.RequiredConditions,
-		OpenQuestion:       brief.OpenQuestion,
+		VersionID:             brief.VersionID,
+		Purpose:               brief.Purpose,
+		Decision:              brief.Decision,
+		Hypothesis:            brief.Hypothesis,
+		CandidatePrompts:      brief.CandidatePrompts,
+		EvaluationCriteria:    brief.EvaluationCriteria,
+		EnvironmentConditions: brief.EnvironmentConditions,
+		InitialInput:          brief.InitialInput,
+		SuccessCriteria:       brief.SuccessCriteria,
+		RequiredConditions:    brief.RequiredConditions,
+		OpenQuestion:          brief.OpenQuestion,
 	}
 }
 
