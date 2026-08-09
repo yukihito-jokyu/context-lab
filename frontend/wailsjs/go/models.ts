@@ -414,6 +414,50 @@ export namespace wails {
 		    return a;
 		}
 	}
+	export class StopExperimentBriefingData {
+	    operationId: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new StopExperimentBriefingData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.operationId = source["operationId"];
+	    }
+	}
+	export class StopExperimentBriefingResponse {
+	    data?: StopExperimentBriefingData;
+	    error?: ErrorResponse;
+	
+	    static createFrom(source: any = {}) {
+	        return new StopExperimentBriefingResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.data = this.convertValues(source["data"], StopExperimentBriefingData);
+	        this.error = this.convertValues(source["error"], ErrorResponse);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 }
 

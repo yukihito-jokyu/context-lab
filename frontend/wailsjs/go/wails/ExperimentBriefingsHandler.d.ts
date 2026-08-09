@@ -9,3 +9,5 @@ export function GetExperimentBriefing(arg1:string):Promise<wails.GetExperimentBr
 export function SendExperimentBriefMessage(arg1:string,arg2:string,arg3:string):Promise<wails.SendExperimentBriefMessageResponse>;
 
 export function StartExperimentBriefing(arg1:string):Promise<wails.StartExperimentBriefingResponse>;
+
+export function StopExperimentBriefing(arg1:string,arg2:string):Promise<wails.StopExperimentBriefingResponse>;
