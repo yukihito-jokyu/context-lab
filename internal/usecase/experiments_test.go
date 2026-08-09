@@ -100,6 +100,179 @@ func TestStartExperimentBriefingExecute(t *testing.T) {
 	}
 }
 
+// StopExperimentBriefingの入力検証、冪等停止、失敗記録。
+func TestStopExperimentBriefingExecute(t *testing.T) {
+	tests := []struct {
+		name        string
+		requestID   string
+		sessionID   string
+		stopErr     error
+		completeErr error
+		wantCode    apperr.Code
+		wantCalls   int
+		callTwice   bool
+	}{
+		{
+			name:      "空の入力を拒否する",
+			requestID: " ",
+			sessionID: "session-1",
+			wantCode:  apperr.CodeBriefingRequestInvalid,
+		},
+		{
+			name:      "同じrequest IDで停止結果を再利用する",
+			requestID: "request-1",
+			sessionID: "session-1",
+			wantCalls: 1,
+			callTwice: true,
+		},
+		{
+			name:      "ACP停止失敗を記録する",
+			requestID: "request-2",
+			sessionID: "session-1",
+			stopErr:   apperr.New(apperr.CodeACPNotReady),
+			wantCode:  apperr.CodeACPNotReady,
+			wantCalls: 1,
+			callTwice: true,
+		},
+		{
+			name:        "停止確認の保存失敗を正規化する",
+			requestID:   "request-3",
+			sessionID:   "session-1",
+			completeErr: errors.New("store unavailable"),
+			wantCode:    apperr.CodeBriefingStopFailed,
+			wantCalls:   1,
+		},
+		{
+			name:      "通常の停止失敗を安全に正規化する",
+			requestID: "request-4",
+			sessionID: "session-1",
+			stopErr:   errors.New("stop unavailable"),
+			wantCode:  apperr.CodeBriefingStopFailed,
+			wantCalls: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newFakeBriefingStopStore(tt.completeErr)
+			stopper := &fakeBriefingStopper{err: tt.stopErr}
+			command := NewStopExperimentBriefing(store, stopper)
+
+			operation, err := command.Execute(context.Background(), tt.requestID, tt.sessionID)
+			if tt.wantCode != "" {
+				assertBriefingErrorCode(t, err, tt.wantCode)
+			} else if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			} else if operation.OperationID != "stop-operation-"+tt.requestID {
+				t.Errorf("OperationID = %q, want %q", operation.OperationID, "stop-operation-"+tt.requestID)
+			}
+			if tt.callTwice {
+				_, secondErr := command.Execute(context.Background(), tt.requestID, tt.sessionID)
+				if tt.wantCode != "" {
+					assertBriefingErrorCode(t, secondErr, tt.wantCode)
+				} else if secondErr != nil {
+					t.Fatalf("second Execute() error = %v", secondErr)
+				}
+			}
+			if got := stopper.calls; got != tt.wantCalls {
+				t.Errorf("StopExperimentBriefing() calls = %d, want %d", got, tt.wantCalls)
+			}
+		})
+	}
+}
+
+// 永続済み停止状態の復元。
+func TestBriefingStopFailure(t *testing.T) {
+	tests := []struct {
+		name string
+		code string
+		want apperr.Code
+	}{
+		{
+			name: "ACP未準備",
+			code: string(apperr.CodeACPNotReady),
+			want: apperr.CodeACPNotReady,
+		},
+		{
+			name: "非active",
+			code: string(apperr.CodeBriefingNotActive),
+			want: apperr.CodeBriefingNotActive,
+		},
+		{
+			name: "入力不正",
+			code: string(apperr.CodeBriefingRequestInvalid),
+			want: apperr.CodeBriefingRequestInvalid,
+		},
+		{
+			name: "未知",
+			code: "unknown",
+			want: apperr.CodeBriefingStopFailed,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) { assertBriefingErrorCode(t, briefingStopFailure(tt.code), tt.want) })
+	}
+}
+
+// 停止commandの永続化失敗と保留状態。
+func TestStopExperimentBriefingExecuteStoreBoundaries(t *testing.T) {
+	tests := []struct {
+		name      string
+		store     *fakeBriefingStopStore
+		wantCode  apperr.Code
+		wantCalls int
+	}{
+		{
+			name: "通常の開始保存失敗",
+			store: &fakeBriefingStopStore{
+				operations: map[string]domain.ExperimentBriefingStopOperation{},
+				beginErr:   errors.New("store"),
+			},
+			wantCode: apperr.CodeBriefingStopFailed,
+		},
+		{
+			name: "アプリケーション開始保存失敗",
+			store: &fakeBriefingStopStore{
+				operations: map[string]domain.ExperimentBriefingStopOperation{},
+				beginErr:   apperr.New(apperr.CodeBriefingNotActive),
+			},
+			wantCode: apperr.CodeBriefingNotActive,
+		},
+		{
+			name: "保留中を返す",
+			store: &fakeBriefingStopStore{
+				operations: map[string]domain.ExperimentBriefingStopOperation{
+					"request-1": {
+						RequestID:         "request-1",
+						BriefingSessionID: "session-1",
+						State:             domain.BriefingStartStateStarting,
+					},
+				},
+			},
+			wantCode: apperr.CodeBriefingStopPending,
+		},
+		{
+			name: "失敗記録失敗",
+			store: &fakeBriefingStopStore{
+				operations: map[string]domain.ExperimentBriefingStopOperation{},
+				failErr:    errors.New("store"),
+			},
+			wantCode:  apperr.CodeBriefingStopFailed,
+			wantCalls: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stopper := &fakeBriefingStopper{err: errors.New("stop")}
+			_, err := NewStopExperimentBriefing(tt.store, stopper).Execute(context.Background(), "request-1", "session-1")
+			assertBriefingErrorCode(t, err, tt.wantCode)
+			if stopper.calls != tt.wantCalls {
+				t.Errorf("calls = %d, want %d", stopper.calls, tt.wantCalls)
+			}
+		})
+	}
+}
+
 // CreateExperimentFromBriefの入力検証とエラー正規化。
 func TestCreateExperimentFromBriefExecute(t *testing.T) {
 	tests := []struct {
@@ -412,6 +585,83 @@ func (f *fakeExperimentBriefingStore) MarkExperimentBriefingFailed(_ context.Con
 type fakeBriefingStarter struct {
 	err   error
 	calls int
+}
+
+// fakeBriefingStopStore は終了記録portのtest double。
+type fakeBriefingStopStore struct {
+	operations  map[string]domain.ExperimentBriefingStopOperation
+	completeErr error
+	beginErr    error
+	failErr     error
+}
+
+// newFakeBriefingStopStore は終了記録test doubleを生成。
+func newFakeBriefingStopStore(completeErr error) *fakeBriefingStopStore {
+	return &fakeBriefingStopStore{
+		operations:  make(map[string]domain.ExperimentBriefingStopOperation),
+		completeErr: completeErr,
+	}
+}
+
+// BeginStopExperimentBriefing は終了操作を生成または再利用。
+func (f *fakeBriefingStopStore) BeginStopExperimentBriefing(_ context.Context, requestID, briefingSessionID string) (domain.ExperimentBriefingStopOperation, bool, error) {
+	if f.beginErr != nil {
+		return domain.ExperimentBriefingStopOperation{}, false, f.beginErr
+	}
+	if operation, found := f.operations[requestID]; found {
+		if operation.BriefingSessionID != briefingSessionID {
+			return domain.ExperimentBriefingStopOperation{}, false, apperr.New(apperr.CodeBriefingRequestInvalid)
+		}
+
+		return operation, false, nil
+	}
+	operation := domain.ExperimentBriefingStopOperation{
+		RequestID:         requestID,
+		BriefingSessionID: briefingSessionID,
+		OperationID:       "stop-operation-" + requestID,
+		State:             domain.BriefingStartStateStarting,
+	}
+	f.operations[requestID] = operation
+
+	return operation, true, nil
+}
+
+// CompleteStopExperimentBriefing は終了済み状態を記録。
+func (f *fakeBriefingStopStore) CompleteStopExperimentBriefing(_ context.Context, requestID string) error {
+	if f.completeErr != nil {
+		return f.completeErr
+	}
+	operation := f.operations[requestID]
+	operation.State = domain.BriefingStartStateStopped
+	f.operations[requestID] = operation
+
+	return nil
+}
+
+// FailStopExperimentBriefing は終了失敗を記録。
+func (f *fakeBriefingStopStore) FailStopExperimentBriefing(_ context.Context, requestID, failureCode string) error {
+	if f.failErr != nil {
+		return f.failErr
+	}
+	operation := f.operations[requestID]
+	operation.State = domain.BriefingStartStateFailed
+	operation.FailureCode = failureCode
+	f.operations[requestID] = operation
+
+	return nil
+}
+
+// fakeBriefingStopper は外部停止portのtest double。
+type fakeBriefingStopper struct {
+	err   error
+	calls int
+}
+
+// StopExperimentBriefing は指定済み結果を返却。
+func (f *fakeBriefingStopper) StopExperimentBriefing(context.Context, string, string) error {
+	f.calls++
+
+	return f.err
 }
 
 // StartExperimentBriefing は指定済み結果を返却。

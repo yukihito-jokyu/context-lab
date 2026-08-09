@@ -20,6 +20,88 @@ type BriefingStarter interface {
 	StartExperimentBriefing(context.Context, string, string) error
 }
 
+// ExperimentBriefingStopStore は実験ブリーフ終了を記録するport。
+type ExperimentBriefingStopStore interface {
+	BeginStopExperimentBriefing(context.Context, string, string) (domain.ExperimentBriefingStopOperation, bool, error)
+	CompleteStopExperimentBriefing(context.Context, string) error
+	FailStopExperimentBriefing(context.Context, string, string) error
+}
+
+// BriefingStopper は実験ブリーフ終了を外部へ委譲するport。
+type BriefingStopper interface {
+	StopExperimentBriefing(context.Context, string, string) error
+}
+
+// StopExperimentBriefing は実験ブリーフ終了command。
+type StopExperimentBriefing struct {
+	store   ExperimentBriefingStopStore
+	stopper BriefingStopper
+}
+
+// NewStopExperimentBriefing は実験ブリーフ終了commandを生成。
+func NewStopExperimentBriefing(store ExperimentBriefingStopStore, stopper BriefingStopper) *StopExperimentBriefing {
+	return &StopExperimentBriefing{store: store, stopper: stopper}
+}
+
+// Execute は実験ブリーフ終了を記録してACP停止を委譲。
+func (u *StopExperimentBriefing) Execute(ctx context.Context, requestID, briefingSessionID string) (domain.ExperimentBriefingStopOperation, error) {
+	if strings.TrimSpace(requestID) == "" || strings.TrimSpace(briefingSessionID) == "" {
+		return domain.ExperimentBriefingStopOperation{}, apperr.New(apperr.CodeBriefingRequestInvalid)
+	}
+
+	operation, created, err := u.store.BeginStopExperimentBriefing(ctx, strings.TrimSpace(requestID), strings.TrimSpace(briefingSessionID))
+	if err != nil {
+		if appErr := apperr.As(err); appErr != nil {
+			return domain.ExperimentBriefingStopOperation{}, appErr
+		}
+
+		return domain.ExperimentBriefingStopOperation{}, apperr.Wrap(apperr.CodeBriefingStopFailed, err)
+	}
+	if !created {
+		if operation.State == domain.BriefingStartStateFailed {
+			return domain.ExperimentBriefingStopOperation{}, briefingStopFailure(operation.FailureCode)
+		}
+		if operation.State == domain.BriefingStartStateStarting {
+			return domain.ExperimentBriefingStopOperation{}, apperr.New(apperr.CodeBriefingStopPending)
+		}
+
+		return operation, nil
+	}
+
+	if err := u.stopper.StopExperimentBriefing(ctx, operation.BriefingSessionID, operation.OperationID); err != nil {
+		failure := apperr.As(err)
+		if failure == nil {
+			failure = apperr.New(apperr.CodeBriefingStopFailed)
+		}
+		if markErr := u.store.FailStopExperimentBriefing(ctx, operation.RequestID, string(failure.Code)); markErr != nil {
+			return domain.ExperimentBriefingStopOperation{}, apperr.Wrap(apperr.CodeBriefingStopFailed, markErr)
+		}
+
+		return domain.ExperimentBriefingStopOperation{}, failure
+	}
+
+	if err := u.store.CompleteStopExperimentBriefing(ctx, operation.RequestID); err != nil {
+		return domain.ExperimentBriefingStopOperation{}, apperr.Wrap(apperr.CodeBriefingStopFailed, err)
+	}
+	operation.State = domain.BriefingStartStateStopped
+
+	return operation, nil
+}
+
+// briefingStopFailure は永続済みの安全な終了失敗を復元。
+func briefingStopFailure(code string) error {
+	switch apperr.Code(code) {
+	case apperr.CodeACPNotReady:
+		return apperr.New(apperr.CodeACPNotReady)
+	case apperr.CodeBriefingNotActive:
+		return apperr.New(apperr.CodeBriefingNotActive)
+	case apperr.CodeBriefingRequestInvalid:
+		return apperr.New(apperr.CodeBriefingRequestInvalid)
+	default:
+		return apperr.New(apperr.CodeBriefingStopFailed)
+	}
+}
+
 // ExperimentBriefingMessageStore はメッセージ送信の記録と結果保存のport。
 type ExperimentBriefingMessageStore interface {
 	BeginExperimentBriefMessage(context.Context, string, string) (domain.ExperimentBriefingMessageOperation, bool, error)

@@ -93,6 +93,74 @@ func TestExperimentBriefingsHandlerSendExperimentBriefMessage(t *testing.T) {
 	}
 }
 
+// Wails実験ブリーフ終了の成功と安全な失敗返却。
+func TestExperimentBriefingsHandlerStopExperimentBriefing(t *testing.T) {
+	tests := []struct {
+		name       string
+		stopperErr error
+		wantCode   apperr.Code
+	}{
+		{
+			name: "終了操作識別子だけを返す",
+		},
+		{
+			name:       "内部エラーを安全なコードへ変換する",
+			stopperErr: errors.New("private ACP credential"),
+			wantCode:   apperr.CodeBriefingStopFailed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &handlerBriefingStore{}
+			stopper := handlerBriefingStopper{err: tt.stopperErr}
+			handler := NewExperimentBriefingsHandler(
+				usecase.NewStartExperimentBriefing(store, handlerBriefingStarter{}),
+				usecase.NewSendExperimentBriefMessage(store, handlerBriefingMessageSender{}),
+				usecase.NewGetExperimentBriefing(store),
+				usecase.NewCreateExperimentFromBrief(store),
+				newTestLogger(),
+				usecase.NewStopExperimentBriefing(store, stopper),
+			)
+
+			got := handler.StopExperimentBriefing("request-1", "session-1")
+			if tt.wantCode != "" {
+				if got.Error == nil {
+					t.Fatal("Error = nil, want safe error")
+				}
+				if got.Error.Code != string(tt.wantCode) {
+					t.Errorf("Error.Code = %q, want %q", got.Error.Code, tt.wantCode)
+				}
+				if got.Data != nil {
+					t.Errorf("Data = %+v, want nil", got.Data)
+				}
+
+				return
+			}
+			if got.Error != nil {
+				t.Fatalf("Error = %+v, want nil", got.Error)
+			}
+			if got.Data == nil {
+				t.Fatal("Data = nil, want operation identifier")
+			}
+			if got.Data.OperationID != "stop-operation-1" {
+				t.Errorf("OperationID = %q, want %q", got.Data.OperationID, "stop-operation-1")
+			}
+		})
+	}
+}
+
+// 実験ブリーフ終了失敗の安全な変換。
+func TestFailStopExperimentBriefing(t *testing.T) {
+	got := failStopExperimentBriefing(errors.New("private ACP credential"))
+	if got.Error == nil {
+		t.Fatal("Error = nil, want safe error")
+	}
+	if got.Error.Code != string(apperr.CodeUnexpected) {
+		t.Errorf("Error.Code = %q, want %q", got.Error.Code, apperr.CodeUnexpected)
+	}
+}
+
 // Wails実験ブリーフ採用の成功と安全な失敗返却。
 func TestExperimentBriefingsHandlerCreateExperimentFromBrief(t *testing.T) {
 	tests := []struct {
@@ -398,6 +466,26 @@ type handlerBriefingStore struct {
 	found     bool
 }
 
+// BeginStopExperimentBriefing は指定済み終了操作を返却。
+func (*handlerBriefingStore) BeginStopExperimentBriefing(_ context.Context, requestID, briefingSessionID string) (domain.ExperimentBriefingStopOperation, bool, error) {
+	return domain.ExperimentBriefingStopOperation{
+		RequestID:         requestID,
+		BriefingSessionID: briefingSessionID,
+		OperationID:       "stop-operation-1",
+		State:             domain.BriefingStartStateStarting,
+	}, true, nil
+}
+
+// CompleteStopExperimentBriefing は終了完了を受理。
+func (*handlerBriefingStore) CompleteStopExperimentBriefing(context.Context, string) error {
+	return nil
+}
+
+// FailStopExperimentBriefing は終了失敗を受理。
+func (*handlerBriefingStore) FailStopExperimentBriefing(context.Context, string, string) error {
+	return nil
+}
+
 // 指定済み採用結果返却。
 func (s *handlerBriefingStore) CreateExperimentFromBrief(context.Context, string, string, string) (domain.ExperimentCreation, bool, error) {
 	if s.createErr != nil {
@@ -469,6 +557,16 @@ func (handlerBriefingStarter) StartExperimentBriefing(context.Context, string, s
 // handlerBriefingMessageSender はhandler用会話送信portのtest double。
 type handlerBriefingMessageSender struct {
 	err error
+}
+
+// handlerBriefingStopper はhandler用外部停止portのtest double。
+type handlerBriefingStopper struct {
+	err error
+}
+
+// StopExperimentBriefing は指定済み結果を返却。
+func (s handlerBriefingStopper) StopExperimentBriefing(context.Context, string, string) error {
+	return s.err
 }
 
 // SendExperimentBriefMessage は安全な応答を返却。

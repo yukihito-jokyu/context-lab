@@ -17,3 +17,7 @@ export function SendExperimentBriefMessage(arg1, arg2, arg3) {
 export function StartExperimentBriefing(arg1) {
   return window['go']['wails']['ExperimentBriefingsHandler']['StartExperimentBriefing'](arg1);
 }
+
+export function StopExperimentBriefing(arg1, arg2) {
+  return window['go']['wails']['ExperimentBriefingsHandler']['StopExperimentBriefing'](arg1, arg2);
+}

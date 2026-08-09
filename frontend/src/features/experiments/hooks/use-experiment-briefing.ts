@@ -6,6 +6,7 @@ import type {
 } from "../services/get-experiment-briefing-service";
 import type { SendExperimentBriefMessageService } from "../services/send-experiment-brief-message-service";
 import type { StartExperimentBriefingService } from "../services/start-experiment-briefing-service";
+import type { StopExperimentBriefingService } from "../services/stop-experiment-briefing-service";
 
 type BriefingError = { code: string; message: string };
 
@@ -15,6 +16,7 @@ type UseExperimentBriefingOptions = {
   createExperimentFromBrief: CreateExperimentFromBriefService;
   sendExperimentBriefMessage: SendExperimentBriefMessageService;
   startExperimentBriefing: StartExperimentBriefingService;
+  stopExperimentBriefing: StopExperimentBriefingService;
 };
 
 export function useExperimentBriefing({
@@ -23,6 +25,7 @@ export function useExperimentBriefing({
   createExperimentFromBrief,
   sendExperimentBriefMessage,
   startExperimentBriefing,
+  stopExperimentBriefing,
 }: UseExperimentBriefingOptions) {
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<BriefingError>();
@@ -38,6 +41,8 @@ export function useExperimentBriefing({
   const [sendError, setSendError] = useState<BriefingError>();
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<BriefingError>();
+  const [isStopping, setIsStopping] = useState(false);
+  const [stopError, setStopError] = useState<BriefingError>();
   const hasStartedForOpenRef = useRef(false);
   const refreshGenerationRef = useRef(0);
 
@@ -111,6 +116,8 @@ export function useExperimentBriefing({
       setSendOperationId(undefined);
       setCreateError(undefined);
       setIsCreating(false);
+      setStopError(undefined);
+      setIsStopping(false);
       setIsRefreshing(false);
       return;
     }
@@ -202,6 +209,36 @@ export function useExperimentBriefing({
     }
   }, [briefing, briefingStart, createExperimentFromBrief, isCreating]);
 
+  const stopBriefing = useCallback(async () => {
+    if (!briefingStart || isStopping) return false;
+
+    setIsStopping(true);
+    setStopError(undefined);
+    try {
+      const response = await stopExperimentBriefing(
+        crypto.randomUUID(),
+        briefingStart.briefingSessionId,
+      );
+      if (response.data) return true;
+
+      setStopError(
+        response.error ?? {
+          code: "UNKNOWN",
+          message: "壁打ちを終了できませんでした。もう一度お試しください。",
+        },
+      );
+      return false;
+    } catch {
+      setStopError({
+        code: "UNKNOWN",
+        message: "壁打ちを終了できませんでした。もう一度お試しください。",
+      });
+      return false;
+    } finally {
+      setIsStopping(false);
+    }
+  }, [briefingStart, isStopping, stopExperimentBriefing]);
+
   return {
     beginBriefing,
     briefing,
@@ -212,6 +249,7 @@ export function useExperimentBriefing({
     isRefreshing,
     isCreating,
     isSending,
+    isStopping,
     isStarting,
     refreshBriefing,
     refreshError,
@@ -219,5 +257,7 @@ export function useExperimentBriefing({
     sendError,
     sendOperationId,
     startError,
+    stopBriefing,
+    stopError,
   };
 }

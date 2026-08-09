@@ -14,6 +14,8 @@ const (
 	CodeBriefingMessageFailed           Code = "EXPERIMENT_BRIEFING_MESSAGE_UNAVAILABLE"
 	CodeBriefingNotActive               Code = "EXPERIMENT_BRIEFING_NOT_ACTIVE"
 	CodeBriefingMessagePending          Code = "EXPERIMENT_BRIEFING_MESSAGE_PENDING"
+	CodeBriefingStopFailed              Code = "EXPERIMENT_BRIEFING_STOP_UNAVAILABLE"
+	CodeBriefingStopPending             Code = "EXPERIMENT_BRIEFING_STOP_PENDING"
 	CodeExperimentCreateFailed          Code = "EXPERIMENT_CREATE_UNAVAILABLE"
 	CodeExperimentBriefIncomplete       Code = "EXPERIMENT_BRIEF_INCOMPLETE"
 	CodeExperimentBriefVersionNotFound  Code = "EXPERIMENT_BRIEF_VERSION_NOT_FOUND"
@@ -34,6 +36,8 @@ var defaultMessages = map[Code]message{
 	CodeBriefingMessageFailed:           "実験ブリーフへメッセージを送信できませんでした",
 	CodeBriefingNotActive:               "実験ブリーフは送信できる状態ではありません",
 	CodeBriefingMessagePending:          "実験ブリーフのメッセージ送信を確認中です",
+	CodeBriefingStopFailed:              "実験ブリーフを終了できませんでした",
+	CodeBriefingStopPending:             "実験ブリーフの終了を確認中です",
 	CodeExperimentCreateFailed:          "実験を作成できませんでした",
 	CodeExperimentBriefIncomplete:       "採用する実験ブリーフの条件が不足しています",
 	CodeExperimentBriefVersionNotFound:  "採用する実験ブリーフ版が見つかりません",

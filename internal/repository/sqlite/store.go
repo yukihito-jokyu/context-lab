@@ -33,6 +33,7 @@ type Store struct {
 	beginBriefingTransaction     func(context.Context) (briefingTransaction, error)
 	failBriefingMessageOperation func(context.Context, string, string) (sql.Result, error)
 	briefingMessageMu            sync.Mutex
+	listMu                       sync.Mutex
 }
 
 // Open は管理ディレクトリとSQLiteスキーマを初期化。

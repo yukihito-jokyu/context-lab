@@ -4,6 +4,7 @@ import { getExperimentBriefing } from "@/features/experiments/services/get-exper
 import { listExperiments } from "@/features/experiments/services/list-experiments-service";
 import { sendExperimentBriefMessage } from "@/features/experiments/services/send-experiment-brief-message-service";
 import { startExperimentBriefing } from "@/features/experiments/services/start-experiment-briefing-service";
+import { stopExperimentBriefing } from "@/features/experiments/services/stop-experiment-briefing-service";
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
       createExperimentFromBrief={createExperimentFromBrief}
       sendExperimentBriefMessage={sendExperimentBriefMessage}
       startExperimentBriefing={startExperimentBriefing}
+      stopExperimentBriefing={stopExperimentBriefing}
     />
   );
 }

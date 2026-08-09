@@ -19,6 +19,7 @@ import type { GetExperimentBriefingService } from "./services/get-experiment-bri
 import type { ListExperimentsService } from "./services/list-experiments-service";
 import type { SendExperimentBriefMessageService } from "./services/send-experiment-brief-message-service";
 import type { StartExperimentBriefingService } from "./services/start-experiment-briefing-service";
+import type { StopExperimentBriefingService } from "./services/stop-experiment-briefing-service";
 
 type ListData = Awaited<ReturnType<ListExperimentsService>>["data"];
 
@@ -28,6 +29,7 @@ type ExperimentListPageProps = {
   getExperimentBriefing: GetExperimentBriefingService;
   createExperimentFromBrief: CreateExperimentFromBriefService;
   sendExperimentBriefMessage: SendExperimentBriefMessageService;
+  stopExperimentBriefing: StopExperimentBriefingService;
 };
 
 const stateBadgeVariant = (state: string) => {
@@ -79,6 +81,7 @@ export function ExperimentListPage({
   getExperimentBriefing,
   createExperimentFromBrief,
   sendExperimentBriefMessage,
+  stopExperimentBriefing,
 }: ExperimentListPageProps) {
   const [data, setData] = useState<ListData>();
   const [isLoading, setIsLoading] = useState(true);
@@ -281,6 +284,7 @@ export function ExperimentListPage({
         open={isBriefingDialogOpen}
         sendExperimentBriefMessage={sendExperimentBriefMessage}
         startExperimentBriefing={startExperimentBriefing}
+        stopExperimentBriefing={stopExperimentBriefing}
       />
     </main>
   );
