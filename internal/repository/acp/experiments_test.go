@@ -278,8 +278,12 @@ func TestCodexACPSessionRequestFailures(t *testing.T) {
 		if err != nil {
 			t.Fatalf("os.Pipe() error = %v", err)
 		}
-		defer reader.Close()
-		defer writer.Close()
+		defer func() {
+			_ = reader.Close()
+		}()
+		defer func() {
+			_ = writer.Close()
+		}()
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		session := &codexACPSession{
