@@ -346,7 +346,7 @@ export const BriefIncomplete: Story = {
     createExperimentFromBrief,
     listExperiments: async () => success,
     getExperimentBriefing: async () => ({ data: briefing }),
-    sendExperimentBriefMessage,
+    sendExperimentBriefMessage: sendBriefingMessage,
     startExperimentBriefing: async () => ({
       data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
     }),
@@ -369,7 +369,7 @@ export const CreateExperimentPending: Story = {
     createExperimentFromBrief: () => new Promise(() => {}),
     listExperiments: async () => success,
     getExperimentBriefing: async () => ({ data: completeBrief }),
-    sendExperimentBriefMessage,
+    sendExperimentBriefMessage: sendBriefingMessage,
     startExperimentBriefing: async () => ({
       data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
     }),
@@ -397,7 +397,7 @@ export const CreateExperimentFailure: Story = {
     }),
     listExperiments: async () => success,
     getExperimentBriefing: async () => ({ data: completeBrief }),
-    sendExperimentBriefMessage,
+    sendExperimentBriefMessage: sendBriefingMessage,
     startExperimentBriefing: async () => ({
       data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
     }),
