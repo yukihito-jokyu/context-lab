@@ -2,6 +2,26 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ExperimentListPage } from "./ExperimentListPage";
 
 const confirmedAt = "2026-08-08T10:25:00+09:00";
+const briefing = {
+  state: "active",
+  messages: [
+    {
+      role: "assistant" as const,
+      content: "比較したい対象と成功基準を教えてください。",
+      sequenceNo: 1,
+      createdAt: confirmedAt,
+    },
+  ],
+  latestBrief: {
+    versionId: "brief-v1",
+    decision: "問い合わせ要約の品質を比較する",
+    hypothesis: "要約の制約を明示すると正確性が向上する",
+    successCriteria: "正確性と要点保持を評価する",
+    requiredConditions: "同じ入力と評価手順を用いる",
+    openQuestion: "評価者の人数を確定する",
+  },
+  lastConfirmedAt: confirmedAt,
+};
 const success = {
   data: {
     experiments: [
@@ -40,6 +60,7 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {
   args: {
     listExperiments: async () => success,
+    getExperimentBriefing: async () => ({ data: briefing }),
     startExperimentBriefing: async () => ({
       data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
     }),
@@ -55,6 +76,7 @@ export const Empty: Story = {
         lastConfirmedAt: confirmedAt,
       },
     }),
+    getExperimentBriefing: async () => ({ data: briefing }),
     startExperimentBriefing: async () => ({
       data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
     }),
@@ -63,6 +85,7 @@ export const Empty: Story = {
 export const Loading: Story = {
   args: {
     listExperiments: () => new Promise(() => {}),
+    getExperimentBriefing: async () => ({ data: briefing }),
     startExperimentBriefing: async () => ({
       data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
     }),
@@ -76,6 +99,7 @@ export const LoadError: Story = {
         message: "実験一覧を取得できませんでした。",
       },
     }),
+    getExperimentBriefing: async () => ({ data: briefing }),
     startExperimentBriefing: async () => ({
       data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
     }),
@@ -85,6 +109,7 @@ export const LoadError: Story = {
 export const BriefingPending: Story = {
   args: {
     listExperiments: async () => success,
+    getExperimentBriefing: async () => ({ data: briefing }),
     startExperimentBriefing: () => new Promise(() => {}),
   },
   play: async ({ canvas, userEvent }) => {
@@ -95,10 +120,42 @@ export const BriefingPending: Story = {
 export const BriefingError: Story = {
   args: {
     listExperiments: async () => success,
+    getExperimentBriefing: async () => ({ data: briefing }),
     startExperimentBriefing: async () => ({
       error: {
         code: "UNAVAILABLE",
         message: "実験設計を開始できませんでした。",
+      },
+    }),
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "新規実験" }));
+  },
+};
+
+export const BriefingRefreshPending: Story = {
+  args: {
+    listExperiments: async () => success,
+    startExperimentBriefing: async () => ({
+      data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
+    }),
+    getExperimentBriefing: () => new Promise(() => {}),
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "新規実験" }));
+  },
+};
+
+export const BriefingRefreshError: Story = {
+  args: {
+    listExperiments: async () => success,
+    startExperimentBriefing: async () => ({
+      data: { briefingSessionId: "briefing-1", operationId: "operation-1" },
+    }),
+    getExperimentBriefing: async () => ({
+      error: {
+        code: "UNAVAILABLE",
+        message: "最新状態を取得できませんでした。",
       },
     }),
   },

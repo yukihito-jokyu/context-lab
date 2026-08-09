@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/yukihito-jokyu/context-lab/internal/domain"
 	apperr "github.com/yukihito-jokyu/context-lab/internal/errors"
@@ -162,6 +163,91 @@ func TestStartExperimentBriefingExecuteStoreFailure(t *testing.T) {
 
 	_, err := usecase.Execute(context.Background(), "request-1")
 	assertBriefingErrorCode(t, err, apperr.CodeBriefingStartFailed)
+}
+
+// GetExperimentBriefingの入力検証とport失敗正規化。
+func TestGetExperimentBriefingExecute(t *testing.T) {
+	repositoryFailure := errors.New("repository failure")
+	confirmedAt := time.Date(2026, time.August, 9, 1, 2, 3, 0, time.UTC)
+	tests := []struct {
+		name      string
+		sessionID string
+		reader    fakeExperimentBriefingReader
+		wantCode  apperr.Code
+		wantFound bool
+	}{
+		{
+			name:      "空のsession IDを拒否する",
+			sessionID: " ",
+			wantCode:  apperr.CodeBriefingRequestInvalid,
+		},
+		{
+			name:      "未知sessionを区別する",
+			sessionID: "missing",
+			reader:    fakeExperimentBriefingReader{},
+			wantCode:  apperr.CodeBriefingNotFound,
+		},
+		{
+			name:      "永続化失敗を取得失敗へ正規化する",
+			sessionID: "session-1",
+			reader: fakeExperimentBriefingReader{
+				err: repositoryFailure,
+			},
+			wantCode: apperr.CodeBriefingLoadFailed,
+		},
+		{
+			name:      "取消を呼び出し元へ返す",
+			sessionID: "session-1",
+			reader: fakeExperimentBriefingReader{
+				err: context.Canceled,
+			},
+			wantCode: apperr.CodeOperationCanceled,
+		},
+		{
+			name:      "保存済みsessionを返す",
+			sessionID: "session-1",
+			reader: fakeExperimentBriefingReader{
+				found: true,
+				briefing: domain.ExperimentBriefing{
+					State:           domain.BriefingStartStateStarted,
+					Messages:        []domain.ExperimentBriefingMessage{},
+					LastConfirmedAt: confirmedAt,
+				},
+			},
+			wantFound: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			getExperimentBriefing := NewGetExperimentBriefing(tt.reader)
+
+			got, err := getExperimentBriefing.Execute(context.Background(), tt.sessionID)
+			if tt.wantCode != "" {
+				assertBriefingErrorCode(t, err, tt.wantCode)
+
+				return
+			}
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if gotFound := !got.LastConfirmedAt.IsZero(); gotFound != tt.wantFound {
+				t.Errorf("briefing found = %v, want %v", gotFound, tt.wantFound)
+			}
+		})
+	}
+}
+
+// fakeExperimentBriefingReader は再読込portのtest double。
+type fakeExperimentBriefingReader struct {
+	briefing domain.ExperimentBriefing
+	found    bool
+	err      error
+}
+
+// GetExperimentBriefing は指定済み実験ブリーフを返却。
+func (f fakeExperimentBriefingReader) GetExperimentBriefing(context.Context, string) (domain.ExperimentBriefing, bool, error) {
+	return f.briefing, f.found, f.err
 }
 
 // 安全な開始エラーコード検証。

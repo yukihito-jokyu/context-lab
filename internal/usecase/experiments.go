@@ -20,6 +20,42 @@ type BriefingStarter interface {
 	StartExperimentBriefing(context.Context, string, string) error
 }
 
+// ExperimentBriefingReader は実験ブリーフ画面を読み出すport。
+type ExperimentBriefingReader interface {
+	GetExperimentBriefing(context.Context, string) (domain.ExperimentBriefing, bool, error)
+}
+
+// GetExperimentBriefing は実験ブリーフ画面の再読込query。
+type GetExperimentBriefing struct {
+	reader ExperimentBriefingReader
+}
+
+// NewGetExperimentBriefing は実験ブリーフ再読込queryを生成。
+func NewGetExperimentBriefing(reader ExperimentBriefingReader) *GetExperimentBriefing {
+	return &GetExperimentBriefing{reader: reader}
+}
+
+// Execute は保存済み実験ブリーフを取得。
+func (u *GetExperimentBriefing) Execute(ctx context.Context, briefingSessionID string) (domain.ExperimentBriefing, error) {
+	if strings.TrimSpace(briefingSessionID) == "" {
+		return domain.ExperimentBriefing{}, apperr.New(apperr.CodeBriefingRequestInvalid)
+	}
+
+	briefing, found, err := u.reader.GetExperimentBriefing(ctx, briefingSessionID)
+	if err != nil {
+		if appErr := apperr.FromContextError(err); appErr != nil {
+			return domain.ExperimentBriefing{}, appErr
+		}
+
+		return domain.ExperimentBriefing{}, apperr.Wrap(apperr.CodeBriefingLoadFailed, err)
+	}
+	if !found {
+		return domain.ExperimentBriefing{}, apperr.New(apperr.CodeBriefingNotFound)
+	}
+
+	return briefing, nil
+}
+
 // StartExperimentBriefing は実験ブリーフ開始command。
 type StartExperimentBriefing struct {
 	store   ExperimentBriefingStartStore

@@ -3,13 +3,16 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"io"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/yukihito-jokyu/context-lab/internal/domain"
-	"reflect"
-	"time"
 )
 
 // SQLite実験ブリーフ開始の原子的記録と再利用。
@@ -58,6 +61,564 @@ func TestStoreBeginExperimentBriefing(t *testing.T) {
 	}
 	if operationCount != 1 {
 		t.Errorf("briefing operations = %d, want 1", operationCount)
+	}
+}
+
+// SQLite実験ブリーフ再読込の保存内容取得。
+func TestStoreGetExperimentBriefing(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+	statements := []struct {
+		query string
+		args  []any
+	}{
+		{
+			query: "INSERT INTO preparation_sessions (id, kind, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+			args: []any{
+				"session-1",
+				"experiment_brief",
+				"started",
+				"2026-08-09T00:00:00Z",
+				"2026-08-09T00:01:00Z",
+			},
+		},
+		{
+			query: "INSERT INTO briefing_messages (preparation_session_id, sequence_no, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+			args: []any{
+				"session-1",
+				1,
+				"user",
+				"目的を確認したい",
+				"2026-08-09T00:02:00Z",
+			},
+		},
+		{
+			query: "INSERT INTO briefing_messages (preparation_session_id, sequence_no, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+			args: []any{
+				"session-1",
+				2,
+				"assistant",
+				"比較案を提示します",
+				"2026-08-09T00:03:00Z",
+			},
+		},
+		{
+			query: "INSERT INTO briefing_versions (id, preparation_session_id, version_no, decision, hypothesis, success_criteria, required_conditions, open_question, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			args: []any{
+				"version-1",
+				"session-1",
+				1,
+				"旧版",
+				nil,
+				"旧基準",
+				"旧条件",
+				nil,
+				"2026-08-09T00:04:00Z",
+			},
+		},
+		{
+			query: "INSERT INTO briefing_versions (id, preparation_session_id, version_no, decision, hypothesis, success_criteria, required_conditions, open_question, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			args: []any{
+				"version-2",
+				"session-1",
+				2,
+				"新しい比較案",
+				"仮説",
+				"正確性",
+				"固定条件",
+				"追加確認",
+				"2026-08-09T00:05:00Z",
+			},
+		},
+	}
+	for _, statement := range statements {
+		if _, err := store.db.Exec(statement.query, statement.args...); err != nil {
+			t.Fatalf("seed briefing error = %v", err)
+		}
+	}
+
+	tests := []struct {
+		name      string
+		sessionID string
+		wantFound bool
+	}{
+		{
+			name:      "会話と最新版を返す",
+			sessionID: "session-1",
+			wantFound: true,
+		},
+		{
+			name:      "未知sessionを返さない",
+			sessionID: "missing",
+			wantFound: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, found, err := store.GetExperimentBriefing(context.Background(), tt.sessionID)
+			if err != nil {
+				t.Fatalf("GetExperimentBriefing() error = %v", err)
+			}
+			if found != tt.wantFound {
+				t.Fatalf("found = %v, want %v", found, tt.wantFound)
+			}
+			if !tt.wantFound {
+				return
+			}
+			if got.State != "started" {
+				t.Errorf("State = %q, want %q", got.State, "started")
+			}
+			if gotMessages := got.Messages; len(gotMessages) != 2 || gotMessages[0].SequenceNo != 1 || gotMessages[1].SequenceNo != 2 {
+				t.Errorf("Messages = %+v, want sequence 1 and 2", gotMessages)
+			}
+			if got.LatestBrief == nil {
+				t.Fatal("LatestBrief = nil, want latest version")
+			}
+			if got := got.LatestBrief.VersionID; got != "version-2" {
+				t.Errorf("LatestBrief.VersionID = %q, want %q", got, "version-2")
+			}
+			if got := got.LastConfirmedAt; !got.Equal(time.Date(2026, time.August, 9, 0, 5, 0, 0, time.UTC)) {
+				t.Errorf("LastConfirmedAt = %s, want %s", got, "2026-08-09 00:05:00 +0000 UTC")
+			}
+		})
+	}
+}
+
+// SQLite実験ブリーフ再読込の読み出し失敗。
+func TestStoreGetExperimentBriefingFailure(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	_, _, err = store.GetExperimentBriefing(context.Background(), "session-1")
+	if err == nil {
+		t.Fatal("GetExperimentBriefing() error = nil, want error")
+	}
+	if got := err.Error(); !strings.Contains(got, "find briefing session") {
+		t.Errorf("GetExperimentBriefing() error = %q, want find briefing session error", got)
+	}
+}
+
+// SQLite実験ブリーフ再読込の各読み出し失敗。
+func TestStoreGetExperimentBriefingReadFailures(t *testing.T) {
+	tests := []struct {
+		name     string
+		scenario briefingReadScenario
+		want     string
+	}{
+		{
+			name:     "会話取得失敗を返す",
+			scenario: briefingReadMessagesQueryError,
+			want:     "query briefing messages",
+		},
+		{
+			name:     "ブリーフ取得失敗を返す",
+			scenario: briefingReadBriefQueryError,
+			want:     "find latest briefing version",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newBriefingReadTestStore(t, tt.scenario)
+
+			_, _, err := store.GetExperimentBriefing(context.Background(), "session-1")
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("GetExperimentBriefing() error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// SQLite実験ブリーフの補助読み出し分岐。
+func TestStoreExperimentBriefingReadBranches(t *testing.T) {
+	tests := []struct {
+		name     string
+		scenario briefingReadScenario
+		read     func(context.Context, *Store) error
+		want     string
+	}{
+		{
+			name:     "sessionの空updated_atはcreated_atへフォールバックする",
+			scenario: briefingReadSessionEmptyUpdatedAt,
+			read: func(ctx context.Context, store *Store) error {
+				briefing, found, err := store.findExperimentBriefingSession(ctx, "session-1")
+				if err == nil && (!found || briefing.LastConfirmedAt.IsZero()) {
+					return errors.New("session fallback result is invalid")
+				}
+
+				return err
+			},
+		},
+		{
+			name:     "sessionの日時不正を返す",
+			scenario: briefingReadSessionInvalidTime,
+			read: func(ctx context.Context, store *Store) error {
+				_, _, err := store.findExperimentBriefingSession(ctx, "session-1")
+
+				return err
+			},
+			want: "parse briefing session update time",
+		},
+		{
+			name:     "会話rowsのclose失敗を反復失敗として返す",
+			scenario: briefingReadMessagesCloseError,
+			read: func(ctx context.Context, store *Store) error {
+				_, _, err := store.listExperimentBriefingMessages(ctx, "session-1")
+
+				return err
+			},
+			want: "iterate briefing messages",
+		},
+		{
+			name:     "会話scan失敗を返す",
+			scenario: briefingReadMessagesScanError,
+			read: func(ctx context.Context, store *Store) error {
+				_, _, err := store.listExperimentBriefingMessages(ctx, "session-1")
+
+				return err
+			},
+			want: "scan briefing message",
+		},
+		{
+			name:     "会話日時不正を返す",
+			scenario: briefingReadMessagesInvalidTime,
+			read: func(ctx context.Context, store *Store) error {
+				_, _, err := store.listExperimentBriefingMessages(ctx, "session-1")
+
+				return err
+			},
+			want: "parse briefing message creation time",
+		},
+		{
+			name:     "会話反復失敗を返す",
+			scenario: briefingReadMessagesRowsError,
+			read: func(ctx context.Context, store *Store) error {
+				_, _, err := store.listExperimentBriefingMessages(ctx, "session-1")
+
+				return err
+			},
+			want: "iterate briefing messages",
+		},
+		{
+			name:     "ブリーフ日時不正を返す",
+			scenario: briefingReadBriefInvalidTime,
+			read: func(ctx context.Context, store *Store) error {
+				_, _, err := store.findLatestExperimentBrief(ctx, "session-1")
+
+				return err
+			},
+			want: "parse briefing version creation time",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newBriefingReadTestStore(t, tt.scenario)
+
+			err := tt.read(context.Background(), store)
+			if tt.want == "" {
+				if err != nil {
+					t.Errorf("read() error = %v, want nil", err)
+				}
+
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("read() error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// briefingReadScenario は実験ブリーフ読み出し失敗を再現する種別。
+type briefingReadScenario string
+
+const (
+	briefingReadMessagesQueryError    briefingReadScenario = "messages-query-error"
+	briefingReadBriefQueryError       briefingReadScenario = "brief-query-error"
+	briefingReadSessionEmptyUpdatedAt briefingReadScenario = "session-empty-updated-at"
+	briefingReadSessionInvalidTime    briefingReadScenario = "session-invalid-time"
+	briefingReadMessagesCloseError    briefingReadScenario = "messages-close-error"
+	briefingReadMessagesScanError     briefingReadScenario = "messages-scan-error"
+	briefingReadMessagesInvalidTime   briefingReadScenario = "messages-invalid-time"
+	briefingReadMessagesRowsError     briefingReadScenario = "messages-rows-error"
+	briefingReadBriefInvalidTime      briefingReadScenario = "brief-invalid-time"
+)
+
+// newBriefingReadTestStore は読み出し失敗再現用SQLiteストアを生成する。
+func newBriefingReadTestStore(t *testing.T, scenario briefingReadScenario) *Store {
+	t.Helper()
+
+	database, err := sql.Open(briefingReadDriverName, string(scenario))
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("database.Close() error = %v", err)
+		}
+	})
+
+	return &Store{db: database}
+}
+
+const briefingReadDriverName = "context-lab-briefing-read-failure"
+
+var briefingReadDriverOnce sync.Once
+
+// init は読み出し失敗再現用driverを一度だけ登録する。
+func init() {
+	briefingReadDriverOnce.Do(func() {
+		sql.Register(briefingReadDriverName, briefingReadDriver{})
+	})
+}
+
+// briefingReadDriver は実験ブリーフ読込専用のdatabase driver。
+type briefingReadDriver struct{}
+
+// Open はscenarioを接続へ渡す。
+func (briefingReadDriver) Open(scenario string) (driver.Conn, error) {
+	return &briefingReadConnection{scenario: briefingReadScenario(scenario)}, nil
+}
+
+// briefingReadConnection はqueryごとの失敗を返す接続。
+type briefingReadConnection struct {
+	scenario briefingReadScenario
+}
+
+// Prepare はこのdriverで利用しない。
+func (*briefingReadConnection) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("prepare is not supported")
+}
+
+// Close は接続を閉じる。
+func (*briefingReadConnection) Close() error {
+	return nil
+}
+
+// Begin はこのdriverで利用しない。
+func (*briefingReadConnection) Begin() (driver.Tx, error) {
+	return nil, errors.New("transactions are not supported")
+}
+
+// QueryContext はscenarioに応じた実験ブリーフ読み出し結果を返す。
+func (c *briefingReadConnection) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+	switch {
+	case strings.Contains(query, "FROM preparation_sessions"):
+		return briefingReadSessionRows(c.scenario)
+	case strings.Contains(query, "FROM briefing_messages"):
+		return briefingReadMessageRows(c.scenario)
+	case strings.Contains(query, "FROM briefing_versions"):
+		return briefingReadVersionRows(c.scenario)
+	default:
+		return nil, errors.New("unexpected query")
+	}
+}
+
+// briefingReadSessionRows はsession queryの結果を返す。
+func briefingReadSessionRows(scenario briefingReadScenario) (driver.Rows, error) {
+	updatedAt := "2026-08-09T00:00:00Z"
+	if scenario == briefingReadSessionEmptyUpdatedAt {
+		updatedAt = ""
+	}
+	if scenario == briefingReadSessionInvalidTime {
+		updatedAt = "invalid-time"
+	}
+
+	return &briefingReadRows{
+		columns: []string{
+			"state",
+			"created_at",
+			"updated_at",
+		},
+		values: [][]driver.Value{{
+			"started",
+			"2026-08-09T00:00:00Z",
+			updatedAt,
+		}},
+	}, nil
+}
+
+// briefingReadMessageRows はmessage queryの結果を返す。
+func briefingReadMessageRows(scenario briefingReadScenario) (driver.Rows, error) {
+	if scenario == briefingReadMessagesQueryError {
+		return nil, errors.New("messages query failed")
+	}
+	rows := &briefingReadRows{columns: []string{
+		"role",
+		"content",
+		"sequence_no",
+		"created_at",
+	}}
+	switch scenario {
+	case briefingReadMessagesCloseError:
+		rows.closeErr = errors.New("messages close failed")
+	case briefingReadMessagesScanError:
+		rows.values = [][]driver.Value{{
+			"user",
+			"content",
+			"invalid-sequence",
+			"2026-08-09T00:00:00Z",
+		}}
+	case briefingReadMessagesInvalidTime:
+		rows.values = [][]driver.Value{{
+			"user",
+			"content",
+			int64(1),
+			"invalid-time",
+		}}
+	case briefingReadMessagesRowsError:
+		rows.nextErr = errors.New("messages iteration failed")
+	}
+
+	return rows, nil
+}
+
+// briefingReadVersionRows はbrief version queryの結果を返す。
+func briefingReadVersionRows(scenario briefingReadScenario) (driver.Rows, error) {
+	if scenario == briefingReadBriefQueryError {
+		return nil, errors.New("brief query failed")
+	}
+	createdAt := "2026-08-09T00:00:00Z"
+	if scenario == briefingReadBriefInvalidTime {
+		createdAt = "invalid-time"
+	}
+
+	return &briefingReadRows{
+		columns: []string{
+			"id",
+			"decision",
+			"hypothesis",
+			"success_criteria",
+			"required_conditions",
+			"open_question",
+			"created_at",
+		},
+		values: [][]driver.Value{{
+			"version-1",
+			"decision",
+			nil,
+			"criteria",
+			"conditions",
+			nil,
+			createdAt,
+		}},
+	}, nil
+}
+
+// briefingReadRows は任意のrows結果または走査・close失敗を表す。
+type briefingReadRows struct {
+	columns  []string
+	values   [][]driver.Value
+	position int
+	nextErr  error
+	closeErr error
+}
+
+// Columns は列名を返す。
+func (r *briefingReadRows) Columns() []string {
+	return r.columns
+}
+
+// Close は指定済みclose失敗を返す。
+func (r *briefingReadRows) Close() error {
+	return r.closeErr
+}
+
+// Next は次のrowまたは指定済み反復失敗を返す。
+func (r *briefingReadRows) Next(destination []driver.Value) error {
+	if r.nextErr != nil {
+		return r.nextErr
+	}
+	if r.position >= len(r.values) {
+		return io.EOF
+	}
+	copy(destination, r.values[r.position])
+	r.position++
+
+	return nil
+}
+
+// SQLite実験ブリーフ状態更新時の確認時刻前進。
+func TestStoreMarkExperimentBriefingUpdatesConfirmationTime(t *testing.T) {
+	tests := []struct {
+		name   string
+		update func(context.Context, *Store, string) error
+		state  string
+	}{
+		{
+			name: "開始済み状態で確認時刻を更新する",
+			update: func(ctx context.Context, store *Store, requestID string) error {
+				return store.MarkExperimentBriefingStarted(ctx, requestID)
+			},
+			state: domain.BriefingStartStateStarted,
+		},
+		{
+			name: "失敗状態で確認時刻を更新する",
+			update: func(ctx context.Context, store *Store, requestID string) error {
+				return store.MarkExperimentBriefingFailed(ctx, requestID, "SAFE_FAILURE")
+			},
+			state: domain.BriefingStartStateFailed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store, err := Open(t.TempDir())
+			if err != nil {
+				t.Fatalf("Open() error = %v", err)
+			}
+			t.Cleanup(func() {
+				if err := store.Close(); err != nil {
+					t.Errorf("Close() error = %v", err)
+				}
+			})
+			start, created, err := store.BeginExperimentBriefing(context.Background(), "request-1")
+			if err != nil {
+				t.Fatalf("BeginExperimentBriefing() error = %v", err)
+			}
+			if !created {
+				t.Fatal("created = false, want true")
+			}
+			before, found, err := store.GetExperimentBriefing(context.Background(), start.BriefingSessionID)
+			if err != nil {
+				t.Fatalf("GetExperimentBriefing() before update error = %v", err)
+			}
+			if !found {
+				t.Fatal("briefing found = false, want true")
+			}
+			if err := tt.update(context.Background(), store, "request-1"); err != nil {
+				t.Fatalf("state update error = %v", err)
+			}
+			after, found, err := store.GetExperimentBriefing(context.Background(), start.BriefingSessionID)
+			if err != nil {
+				t.Fatalf("GetExperimentBriefing() after update error = %v", err)
+			}
+			if !found {
+				t.Fatal("briefing found = false, want true")
+			}
+			if got := after.State; got != tt.state {
+				t.Errorf("State = %q, want %q", got, tt.state)
+			}
+			if !after.LastConfirmedAt.After(before.LastConfirmedAt) {
+				t.Errorf("LastConfirmedAt = %s, want after %s", after.LastConfirmedAt, before.LastConfirmedAt)
+			}
+			if after.LastConfirmedAt.Location() != time.UTC {
+				t.Errorf("LastConfirmedAt location = %s, want UTC", after.LastConfirmedAt.Location())
+			}
+		})
 	}
 }
 
