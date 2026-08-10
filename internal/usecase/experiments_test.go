@@ -499,6 +499,98 @@ func TestGetExperimentBriefingExecute(t *testing.T) {
 	}
 }
 
+// GetExperimentPreparationの入力検証とport失敗正規化。
+func TestGetExperimentPreparationExecute(t *testing.T) {
+	tests := []struct {
+		name         string
+		experimentID string
+		reader       fakeExperimentPreparationReader
+		wantCode     apperr.Code
+		wantFound    bool
+	}{
+		{
+			name:         "空のexperiment IDを拒否する",
+			experimentID: " ",
+			wantCode:     apperr.CodeBriefingRequestInvalid,
+		},
+		{
+			name:         "未知experimentを区別する",
+			experimentID: "missing",
+			wantCode:     apperr.CodeExperimentPreparationNotFound,
+		},
+		{
+			name:         "準備中以外を編集不可にする",
+			experimentID: "experiment-1",
+			reader: fakeExperimentPreparationReader{
+				found: true,
+				preparation: domain.ExperimentPreparation{
+					State: "fixed",
+				},
+			},
+			wantCode: apperr.CodeExperimentPreparationNotEditable,
+		},
+		{
+			name:         "永続化失敗を取得失敗へ正規化する",
+			experimentID: "experiment-1",
+			reader: fakeExperimentPreparationReader{
+				err: errors.New("repository failure"),
+			},
+			wantCode: apperr.CodeExperimentPreparationUnavailable,
+		},
+		{
+			name:         "取消を呼び出し元へ返す",
+			experimentID: "experiment-1",
+			reader: fakeExperimentPreparationReader{
+				err: context.Canceled,
+			},
+			wantCode: apperr.CodeOperationCanceled,
+		},
+		{
+			name:         "準備中experimentを返す",
+			experimentID: "experiment-1",
+			reader: fakeExperimentPreparationReader{
+				found: true,
+				preparation: domain.ExperimentPreparation{
+					ExperimentID: "experiment-1",
+					State:        "preparing",
+				},
+			},
+			wantFound: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			getExperimentPreparation := NewGetExperimentPreparation(tt.reader)
+
+			got, err := getExperimentPreparation.Execute(context.Background(), tt.experimentID)
+			if tt.wantCode != "" {
+				assertBriefingErrorCode(t, err, tt.wantCode)
+
+				return
+			}
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if gotFound := got.ExperimentID != ""; gotFound != tt.wantFound {
+				t.Errorf("preparation found = %v, want %v", gotFound, tt.wantFound)
+			}
+		})
+	}
+}
+
+// fakeExperimentPreparationReader は実験準備query用のtest double。
+type fakeExperimentPreparationReader struct {
+	preparation domain.ExperimentPreparation
+	found       bool
+	err         error
+}
+
+// GetExperimentPreparation は指定済み実験準備を返却。
+func (f fakeExperimentPreparationReader) GetExperimentPreparation(context.Context, string) (domain.ExperimentPreparation, bool, error) {
+	return f.preparation, f.found, f.err
+}
+
 // fakeExperimentBriefingReader は再読込portのtest double。
 type fakeExperimentBriefingReader struct {
 	briefing domain.ExperimentBriefing

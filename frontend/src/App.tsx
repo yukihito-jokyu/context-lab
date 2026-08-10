@@ -1,12 +1,36 @@
 import { ExperimentListPage } from "@/features/experiments/ExperimentListPage";
+import { ExperimentPreparationPage } from "@/features/experiments/ExperimentPreparationPage";
 import { createExperimentFromBrief } from "@/features/experiments/services/create-experiment-from-brief-service";
 import { getExperimentBriefing } from "@/features/experiments/services/get-experiment-briefing-service";
+import { getExperimentPreparation } from "@/features/experiments/services/get-experiment-preparation-service";
 import { listExperiments } from "@/features/experiments/services/list-experiments-service";
 import { sendExperimentBriefMessage } from "@/features/experiments/services/send-experiment-brief-message-service";
 import { startExperimentBriefing } from "@/features/experiments/services/start-experiment-briefing-service";
 import { stopExperimentBriefing } from "@/features/experiments/services/stop-experiment-briefing-service";
 
+function decodeExperimentID(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 export default function App() {
+  const preparationMatch = window.location.pathname.match(
+    /^\/experiments\/([^/]+)\/preparation$/,
+  );
+
+  if (preparationMatch) {
+    return (
+      <ExperimentPreparationPage
+        experimentId={decodeExperimentID(preparationMatch[1])}
+        getExperimentPreparation={getExperimentPreparation}
+        onBackToExperimentList={() => window.location.assign("/")}
+      />
+    );
+  }
+
   return (
     <ExperimentListPage
       listExperiments={listExperiments}

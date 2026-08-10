@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 const (
 	BriefingStartStateStarting = "starting"
@@ -77,6 +80,59 @@ type ExperimentBrief struct {
 type ExperimentCreation struct {
 	ExperimentID string
 	State        string
+}
+
+// ExperimentPreparation は準備中実験の編集前条件。
+type ExperimentPreparation struct {
+	ExperimentID          string
+	State                 string
+	Purpose               string
+	Hypothesis            *string
+	EnvironmentConditions string
+	InitialInput          string
+	Prompts               []ExperimentPreparationPrompt
+	EvaluationAxes        string
+	Source                ExperimentPreparationSource
+	LastConfirmedAt       time.Time
+}
+
+// ExperimentPreparationPrompt は準備中実験の表示用prompt。
+type ExperimentPreparationPrompt struct {
+	SequenceNo int
+	Content    string
+}
+
+// ExperimentPreparationSource は採用済みブリーフの安全な表示用情報。
+type ExperimentPreparationSource struct {
+	State     string
+	VersionID string
+}
+
+// ExperimentPreparationRequiredFields は条件固定に必要な入力の充足状態。
+type ExperimentPreparationRequiredFields struct {
+	Purpose               bool
+	EnvironmentConditions bool
+	InitialInput          bool
+	Prompts               bool
+	EvaluationAxes        bool
+}
+
+// RequiredFields は条件固定に必要な入力の充足状態を返す。
+func (p ExperimentPreparation) RequiredFields() ExperimentPreparationRequiredFields {
+	promptsComplete := len(p.Prompts) >= 2
+	for _, prompt := range p.Prompts {
+		if strings.TrimSpace(prompt.Content) == "" {
+			promptsComplete = false
+		}
+	}
+
+	return ExperimentPreparationRequiredFields{
+		Purpose:               strings.TrimSpace(p.Purpose) != "",
+		EnvironmentConditions: strings.TrimSpace(p.EnvironmentConditions) != "",
+		InitialInput:          strings.TrimSpace(p.InitialInput) != "",
+		Prompts:               promptsComplete,
+		EvaluationAxes:        strings.TrimSpace(p.EvaluationAxes) != "",
+	}
 }
 
 // Experiment は一覧表示に必要な実験の安全な属性。

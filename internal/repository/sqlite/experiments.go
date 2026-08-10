@@ -446,6 +446,52 @@ func (s *Store) GetExperimentBriefing(ctx context.Context, briefingSessionID str
 	return briefing, true, nil
 }
 
+// GetExperimentPreparation は準備中実験の編集条件を読み出す。
+func (s *Store) GetExperimentPreparation(ctx context.Context, experimentID string) (preparation domain.ExperimentPreparation, found bool, err error) {
+	preparation = domain.ExperimentPreparation{ExperimentID: experimentID}
+	var hypothesis sql.NullString
+	var updatedAt string
+	err = s.db.QueryRowContext(ctx, "SELECT e.state, e.purpose, p.hypothesis, p.environment_conditions, p.initial_input, p.evaluation_criteria, p.briefing_version_id, b.decision, p.updated_at FROM experiments e JOIN experiment_preparations p ON p.experiment_id = e.id JOIN briefing_versions b ON b.id = p.briefing_version_id WHERE e.id = ?", experimentID).Scan(&preparation.State, &preparation.Purpose, &hypothesis, &preparation.EnvironmentConditions, &preparation.InitialInput, &preparation.EvaluationAxes, &preparation.Source.VersionID, &preparation.Source.State, &updatedAt)
+	if err == sql.ErrNoRows {
+		return domain.ExperimentPreparation{}, false, nil
+	}
+	if err != nil {
+		return domain.ExperimentPreparation{}, false, fmt.Errorf("find experiment preparation: %w", err)
+	}
+	if hypothesis.Valid {
+		preparation.Hypothesis = &hypothesis.String
+	}
+	confirmedAt, err := time.Parse(time.RFC3339Nano, updatedAt)
+	if err != nil {
+		return domain.ExperimentPreparation{}, false, fmt.Errorf("parse experiment preparation update time: %w", err)
+	}
+	preparation.LastConfirmedAt = confirmedAt.UTC()
+
+	rows, err := s.db.QueryContext(ctx, "SELECT sequence_no, content FROM experiment_preparation_prompts WHERE experiment_id = ? ORDER BY sequence_no ASC", experimentID)
+	if err != nil {
+		return domain.ExperimentPreparation{}, false, fmt.Errorf("query experiment preparation prompts: %w", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("close experiment preparation prompt rows: %w", closeErr)
+		}
+	}()
+
+	preparation.Prompts = make([]domain.ExperimentPreparationPrompt, 0)
+	for rows.Next() {
+		var prompt domain.ExperimentPreparationPrompt
+		if err := rows.Scan(&prompt.SequenceNo, &prompt.Content); err != nil {
+			return domain.ExperimentPreparation{}, false, fmt.Errorf("scan experiment preparation prompt: %w", err)
+		}
+		preparation.Prompts = append(preparation.Prompts, prompt)
+	}
+	if err := rows.Err(); err != nil {
+		return domain.ExperimentPreparation{}, false, fmt.Errorf("iterate experiment preparation prompts: %w", err)
+	}
+
+	return preparation, true, nil
+}
+
 // findExperimentBriefingSession は開始済み実験ブリーフセッションを取得。
 func (s *Store) findExperimentBriefingSession(ctx context.Context, briefingSessionID string) (domain.ExperimentBriefing, bool, error) {
 	var briefing domain.ExperimentBriefing

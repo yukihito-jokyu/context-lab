@@ -1,0 +1,4 @@
+interface:
+  display_name: "Issue Delivery Loop"
+  short_description: "Issue選定からPRマージまでを安全に反復して自動化する"
+  default_prompt: "$issue-delivery-loopを使い、実装可能なIssueがなくなるまで1件ずつ実装・検証・PR・マージしてください。"
