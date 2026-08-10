@@ -257,6 +257,146 @@ type StartRunEvaluationData struct {
 	State        string `json:"state"`
 }
 
+// GetRunDetailResponse はrun詳細queryの成功または失敗結果。
+type GetRunDetailResponse struct {
+	Data  *GetRunDetailData `json:"data,omitempty"`
+	Error *ErrorResponse    `json:"error,omitempty"`
+}
+
+// GetRunDetailData は画面へ返すrunの安全な実行事実と観測結果。
+type GetRunDetailData struct {
+	Run             RunDetailRunData                    `json:"run"`
+	FixedPrompt     ExperimentPreparationPromptResponse `json:"fixedPrompt"`
+	Operation       RunDetailOperationData              `json:"operation"`
+	Observations    []RunDetailObservationData          `json:"observations"`
+	Artifacts       RunDetailArtifactsData              `json:"artifacts"`
+	Failure         *RunDetailFailureData               `json:"failure,omitempty"`
+	Reconciliation  RunDetailReconciliationData         `json:"reconciliation"`
+	LastConfirmedAt time.Time                           `json:"lastConfirmedAt"`
+}
+
+// RunDetailRunData はrunの安全な実行事実。
+type RunDetailRunData struct {
+	ID           string    `json:"id"`
+	ExperimentID string    `json:"experimentId"`
+	State        string    `json:"state"`
+	Summary      *string   `json:"summary,omitempty"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+// RunDetailOperationData は開始操作の安全な状態。
+type RunDetailOperationData struct {
+	ID        string    `json:"id"`
+	State     string    `json:"state"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// RunDetailObservationData は時系列観測の安全な要約。
+type RunDetailObservationData struct {
+	SequenceNo int       `json:"sequenceNo"`
+	Kind       string    `json:"kind"`
+	OccurredAt time.Time `json:"occurredAt"`
+	Summary    string    `json:"summary"`
+}
+
+// RunDetailArtifactData はartifact差分の安全な識別子。
+type RunDetailArtifactData struct {
+	Digest string  `json:"digest"`
+	Label  *string `json:"label,omitempty"`
+	Status string  `json:"status"`
+}
+
+// RunDetailArtifactsData はartifact取得の完全性。
+type RunDetailArtifactsData struct {
+	Status     string                  `json:"status"`
+	Items      []RunDetailArtifactData `json:"items"`
+	ReasonCode string                  `json:"reasonCode,omitempty"`
+}
+
+// RunDetailFailureData はrun固有の安全な失敗情報。
+type RunDetailFailureData struct {
+	Code           string    `json:"code"`
+	OccurredAt     time.Time `json:"occurredAt"`
+	PartialSummary *string   `json:"partialSummary,omitempty"`
+}
+
+// RunDetailReconciliationData は保存済み観測との照合状態。
+type RunDetailReconciliationData struct {
+	State          string    `json:"state"`
+	LastObservedAt time.Time `json:"lastObservedAt"`
+}
+
+// ExperimentRunDetailsHandler はrun詳細queryのWails binding。
+type ExperimentRunDetailsHandler struct {
+	getRunDetail *usecase.GetRunDetail
+	logger       logger.Logger
+}
+
+// NewExperimentRunDetailsHandler はrun詳細queryのbindingを生成。
+func NewExperimentRunDetailsHandler(getRunDetail *usecase.GetRunDetail, appLogger logger.Logger) *ExperimentRunDetailsHandler {
+	return &ExperimentRunDetailsHandler{getRunDetail: getRunDetail, logger: appLogger}
+}
+
+// GetRunDetail はrunの安全な実行事実と観測結果を画面DTOで返す。
+func (h *ExperimentRunDetailsHandler) GetRunDetail(runID string) GetRunDetailResponse {
+	ctx := context.Background()
+	h.logger.Debug(ctx, "get run detail called")
+
+	if h.getRunDetail == nil {
+		response := failGetRunDetail(apperr.New(apperr.CodeRunDetailUnavailable))
+		h.logger.ErrorCode(ctx, "get run detail failed", response.Error.Code, slog.String("operation", "get_run_detail"))
+
+		return response
+	}
+	detail, err := h.getRunDetail.Execute(ctx, runID)
+	if err != nil {
+		response := failGetRunDetail(err)
+		h.logger.ErrorCode(ctx, "get run detail failed", response.Error.Code, slog.String("operation", "get_run_detail"))
+
+		return response
+	}
+	data := toGetRunDetailData(detail)
+
+	return GetRunDetailResponse{Data: &data}
+}
+
+// failGetRunDetail は内部エラーを安全なrun詳細エラーへ変換。
+func failGetRunDetail(err error) GetRunDetailResponse {
+	appErr := apperr.As(err)
+	if appErr == nil {
+		appErr = apperr.NewUnexpected(err)
+	}
+
+	return GetRunDetailResponse{Error: &ErrorResponse{Code: string(appErr.Code), Message: appErr.Error()}}
+}
+
+// toGetRunDetailData はdomain run詳細を画面DTOへ変換する。
+func toGetRunDetailData(detail domain.ExperimentRunDetail) GetRunDetailData {
+	observations := make([]RunDetailObservationData, 0, len(detail.Observations))
+	for _, observation := range detail.Observations {
+		observations = append(observations, RunDetailObservationData{SequenceNo: observation.SequenceNo, Kind: observation.Kind, OccurredAt: observation.OccurredAt.UTC(), Summary: observation.Summary})
+	}
+	artifacts := make([]RunDetailArtifactData, 0, len(detail.Artifacts.Items))
+	for _, artifact := range detail.Artifacts.Items {
+		artifacts = append(artifacts, RunDetailArtifactData{Digest: artifact.Digest, Label: artifact.Label, Status: artifact.Status})
+	}
+	data := GetRunDetailData{
+		Run:             RunDetailRunData{ID: detail.Run.ID, ExperimentID: detail.Run.ExperimentID, State: detail.Run.State, Summary: detail.Run.Summary, CreatedAt: detail.Run.CreatedAt.UTC(), UpdatedAt: detail.Run.UpdatedAt.UTC()},
+		FixedPrompt:     ExperimentPreparationPromptResponse{SequenceNo: detail.FixedPrompt.SequenceNo, Content: detail.FixedPrompt.Content},
+		Operation:       RunDetailOperationData{ID: detail.Operation.ID, State: detail.Operation.State, UpdatedAt: detail.Operation.UpdatedAt.UTC()},
+		Observations:    observations,
+		Artifacts:       RunDetailArtifactsData{Status: detail.Artifacts.Status, Items: artifacts, ReasonCode: detail.Artifacts.ReasonCode},
+		Reconciliation:  RunDetailReconciliationData{State: detail.Reconciliation.State, LastObservedAt: detail.Reconciliation.LastObservedAt.UTC()},
+		LastConfirmedAt: detail.LastConfirmedAt.UTC(),
+	}
+	if detail.Failure != nil {
+		data.Failure = &RunDetailFailureData{Code: detail.Failure.Code, OccurredAt: detail.Failure.OccurredAt.UTC(), PartialSummary: detail.Failure.PartialSummary}
+	}
+
+	return data
+}
+
 // ExperimentEvaluationsHandler はrun評価開始commandのWails binding。
 type ExperimentEvaluationsHandler struct {
 	startRunEvaluation *usecase.StartRunEvaluation
