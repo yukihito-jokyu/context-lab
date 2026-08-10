@@ -11,15 +11,61 @@ import (
 	apperr "github.com/yukihito-jokyu/context-lab/internal/errors"
 )
 
+const experimentStartRetryLimit = 14
+
 // BeginExperiment は固定済み全promptのrunと開始操作を原子的に記録する。
 func (s *Store) BeginExperiment(ctx context.Context, requestID, experimentID string) (domain.ExperimentStart, bool, error) {
 	var lastErr error
-	for attempt := range 12 {
+	for attempt := range experimentStartRetryLimit {
+		existing, found, err := s.findExperimentStart(ctx, requestID)
+		if isSQLiteBusy(err) {
+			lastErr = err
+			if attempt == experimentStartRetryLimit-1 {
+				break
+			}
+			if err := waitDraftSaveRetry(ctx, time.Millisecond<<attempt); err != nil {
+				return domain.ExperimentStart{}, false, err
+			}
+
+			continue
+		}
+		if err != nil {
+			return domain.ExperimentStart{}, false, err
+		}
+		if found {
+			if existing.ExperimentID != experimentID {
+				return domain.ExperimentStart{}, false, apperr.New(apperr.CodeExperimentStartRequestInvalid)
+			}
+
+			return existing, false, nil
+		}
+
 		start, created, err := s.beginExperiment(ctx, requestID, experimentID)
+		if apperr.IsCode(err, apperr.CodeExperimentStartNotReady) {
+			existing, found, findErr := s.findExperimentStart(ctx, requestID)
+			if !isSQLiteBusy(findErr) {
+				if findErr != nil {
+					return domain.ExperimentStart{}, false, findErr
+				}
+				if found {
+					if existing.ExperimentID != experimentID {
+						return domain.ExperimentStart{}, false, apperr.New(apperr.CodeExperimentStartRequestInvalid)
+					}
+
+					return existing, false, nil
+				}
+			}
+			if isSQLiteBusy(findErr) {
+				err = findErr
+			}
+		}
 		if !isSQLiteBusy(err) {
 			return start, created, err
 		}
 		lastErr = err
+		if attempt == experimentStartRetryLimit-1 {
+			break
+		}
 		if err := waitDraftSaveRetry(ctx, time.Millisecond<<attempt); err != nil {
 			return domain.ExperimentStart{}, false, err
 		}
@@ -30,18 +76,6 @@ func (s *Store) BeginExperiment(ctx context.Context, requestID, experimentID str
 
 // beginExperiment は一回のSQLite transactionで開始操作とrunを記録する。
 func (s *Store) beginExperiment(ctx context.Context, requestID, experimentID string) (domain.ExperimentStart, bool, error) {
-	existing, found, err := s.findExperimentStart(ctx, requestID)
-	if err != nil {
-		return domain.ExperimentStart{}, false, err
-	}
-	if found {
-		if existing.ExperimentID != experimentID {
-			return domain.ExperimentStart{}, false, apperr.New(apperr.CodeExperimentStartRequestInvalid)
-		}
-
-		return existing, false, nil
-	}
-
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.ExperimentStart{}, false, fmt.Errorf("begin experiment start: %w", err)

@@ -349,6 +349,27 @@ func TestStoreBeginExperimentDriverFailures(t *testing.T) {
 			},
 		},
 		{
+			name:  "開始transactionのSQLite競合の再試行上限を返す",
+			stage: experimentStartBeginBusy,
+			call: func(store *Store) error {
+				_, _, err := store.BeginExperiment(context.Background(), "request-1", "experiment-1")
+
+				return err
+			},
+		},
+		{
+			name:  "開始transactionのSQLite競合待機中の中止を返す",
+			stage: experimentStartBeginBusy,
+			call: func(store *Store) error {
+				ctx, cancel := context.WithCancel(context.Background())
+				time.AfterFunc(500*time.Microsecond, cancel)
+				defer cancel()
+				_, _, err := store.BeginExperiment(ctx, "request-1", "experiment-1")
+
+				return err
+			},
+		},
+		{
 			name:  "SQLite競合待機中の中止を返す",
 			stage: experimentStartBusy,
 			call: func(store *Store) error {
@@ -370,6 +391,16 @@ func TestStoreBeginExperimentDriverFailures(t *testing.T) {
 			},
 		},
 		{
+			name:        "初期開始snapshot読込のSQLite競合後に既存snapshotを返す",
+			stage:       experimentStartInitialBusyThenReplay,
+			wantSuccess: true,
+			call: func(store *Store) error {
+				_, _, err := store.BeginExperiment(context.Background(), "request-1", "experiment-1")
+
+				return err
+			},
+		},
+		{
 			name:  "transaction開始失敗を返す",
 			stage: experimentStartBeginError,
 			call: func(store *Store) error {
@@ -381,6 +412,44 @@ func TestStoreBeginExperimentDriverFailures(t *testing.T) {
 		{
 			name:  "固定条件主record読込失敗を返す",
 			stage: experimentStartConditionQueryError,
+			call: func(store *Store) error {
+				_, _, err := store.BeginExperiment(context.Background(), "request-1", "experiment-1")
+
+				return err
+			},
+		},
+		{
+			name:  "開始可能でない競合後のsnapshot読込失敗を返す",
+			stage: experimentStartNotReadySnapshotReadError,
+			call: func(store *Store) error {
+				_, _, err := store.BeginExperiment(context.Background(), "request-1", "experiment-1")
+
+				return err
+			},
+		},
+		{
+			name:        "開始可能でない競合後に同じsnapshotを返す",
+			stage:       experimentStartNotReadySnapshotReplay,
+			wantSuccess: true,
+			call: func(store *Store) error {
+				_, _, err := store.BeginExperiment(context.Background(), "request-1", "experiment-1")
+
+				return err
+			},
+		},
+		{
+			name:  "開始可能でない競合後に別実験snapshotを拒否する",
+			stage: experimentStartNotReadySnapshotOther,
+			call: func(store *Store) error {
+				_, _, err := store.BeginExperiment(context.Background(), "request-1", "experiment-1")
+
+				return err
+			},
+		},
+		{
+			name:        "開始可能でない競合後のsnapshot読込競合を再試行する",
+			stage:       experimentStartNotReadySnapshotBusyThenReplay,
+			wantSuccess: true,
 			call: func(store *Store) error {
 				_, _, err := store.BeginExperiment(context.Background(), "request-1", "experiment-1")
 
@@ -474,23 +543,29 @@ func TestStoreBeginExperimentDriverFailures(t *testing.T) {
 type experimentStartFailureStage string
 
 const (
-	experimentStartInitialQueryError     experimentStartFailureStage = "initial-query-error"
-	experimentStartBeginError            experimentStartFailureStage = "begin-error"
-	experimentStartConditionQueryError   experimentStartFailureStage = "condition-query-error"
-	experimentStartPromptQueryError      experimentStartFailureStage = "prompt-query-error"
-	experimentStartPromptScanError       experimentStartFailureStage = "prompt-scan-error"
-	experimentStartPromptRowsError       experimentStartFailureStage = "prompt-rows-error"
-	experimentStartConflictReadError     experimentStartFailureStage = "conflict-read-error"
-	experimentStartConflictRollbackError experimentStartFailureStage = "conflict-rollback-error"
-	experimentStartConflictReplay        experimentStartFailureStage = "conflict-replay"
-	experimentStartConflictOther         experimentStartFailureStage = "conflict-other"
-	experimentStartCommitError           experimentStartFailureStage = "commit-error"
-	experimentStartBusy                  experimentStartFailureStage = "busy"
-	experimentStartPostCommitMissing     experimentStartFailureStage = "post-commit-missing"
-	experimentStartPostCommitReadError   experimentStartFailureStage = "post-commit-read-error"
-	experimentStartFindRunsError         experimentStartFailureStage = "find-runs-error"
-	experimentStartFindWorkspaceError    experimentStartFailureStage = "find-workspace-error"
-	experimentStartFindWorkspaceMissing  experimentStartFailureStage = "find-workspace-missing"
+	experimentStartInitialQueryError              experimentStartFailureStage = "initial-query-error"
+	experimentStartInitialBusyThenReplay          experimentStartFailureStage = "initial-busy-then-replay"
+	experimentStartBeginError                     experimentStartFailureStage = "begin-error"
+	experimentStartConditionQueryError            experimentStartFailureStage = "condition-query-error"
+	experimentStartPromptQueryError               experimentStartFailureStage = "prompt-query-error"
+	experimentStartPromptScanError                experimentStartFailureStage = "prompt-scan-error"
+	experimentStartPromptRowsError                experimentStartFailureStage = "prompt-rows-error"
+	experimentStartConflictReadError              experimentStartFailureStage = "conflict-read-error"
+	experimentStartConflictRollbackError          experimentStartFailureStage = "conflict-rollback-error"
+	experimentStartConflictReplay                 experimentStartFailureStage = "conflict-replay"
+	experimentStartConflictOther                  experimentStartFailureStage = "conflict-other"
+	experimentStartCommitError                    experimentStartFailureStage = "commit-error"
+	experimentStartBusy                           experimentStartFailureStage = "busy"
+	experimentStartBeginBusy                      experimentStartFailureStage = "begin-busy"
+	experimentStartNotReadySnapshotReadError      experimentStartFailureStage = "not-ready-snapshot-read-error"
+	experimentStartNotReadySnapshotReplay         experimentStartFailureStage = "not-ready-snapshot-replay"
+	experimentStartNotReadySnapshotOther          experimentStartFailureStage = "not-ready-snapshot-other"
+	experimentStartNotReadySnapshotBusyThenReplay experimentStartFailureStage = "not-ready-snapshot-busy-then-replay"
+	experimentStartPostCommitMissing              experimentStartFailureStage = "post-commit-missing"
+	experimentStartPostCommitReadError            experimentStartFailureStage = "post-commit-read-error"
+	experimentStartFindRunsError                  experimentStartFailureStage = "find-runs-error"
+	experimentStartFindWorkspaceError             experimentStartFailureStage = "find-workspace-error"
+	experimentStartFindWorkspaceMissing           experimentStartFailureStage = "find-workspace-missing"
 )
 
 const experimentStartFailureDriverName = "context-lab-experiment-start-failure"
@@ -545,6 +620,9 @@ func (c *experimentStartFailureConnection) begin() (driver.Tx, error) {
 	if c.stage == experimentStartBeginError {
 		return nil, errors.New("begin failed")
 	}
+	if c.stage == experimentStartBeginBusy {
+		return nil, errors.New("database is busy")
+	}
 
 	return experimentStartFailureTransaction{stage: c.stage}, nil
 }
@@ -557,12 +635,46 @@ func (c *experimentStartFailureConnection) QueryContext(_ context.Context, query
 		if c.stage == experimentStartBusy {
 			return nil, errors.New("database is busy")
 		}
+		if c.stage == experimentStartInitialBusyThenReplay && c.operationReads == 1 {
+			return nil, errors.New("database is locked")
+		}
+		if (c.stage == experimentStartNotReadySnapshotReadError || c.stage == experimentStartNotReadySnapshotReplay || c.stage == experimentStartNotReadySnapshotOther || c.stage == experimentStartNotReadySnapshotBusyThenReplay) && c.operationReads > 1 {
+			if c.stage == experimentStartNotReadySnapshotReadError {
+				return nil, errors.New("operation query failed")
+			}
+			if c.stage == experimentStartNotReadySnapshotBusyThenReplay && c.operationReads == 2 {
+				return nil, errors.New("database is locked")
+			}
+			experimentID := "experiment-1"
+			if c.stage == experimentStartNotReadySnapshotOther {
+				experimentID = "other-experiment"
+			}
+
+			return &experimentStartFailureRows{
+				columns: []string{
+					"request_id",
+					"experiment_id",
+					"operation_id",
+					"state",
+					"failure_code",
+				},
+				values: [][]driver.Value{
+					{
+						"request-1",
+						experimentID,
+						"operation-1",
+						"starting",
+						"",
+					},
+				},
+			}, nil
+		}
 		if c.stage == experimentStartInitialQueryError ||
 			(c.stage == experimentStartConflictReadError && c.operationReads > 1) ||
 			(c.stage == experimentStartPostCommitReadError && c.operationReads > 1) {
 			return nil, errors.New("operation query failed")
 		}
-		if c.stage == experimentStartFindRunsError || c.stage == experimentStartFindWorkspaceError || c.stage == experimentStartFindWorkspaceMissing || ((c.stage == experimentStartConflictReplay || c.stage == experimentStartConflictOther) && c.operationReads > 1) {
+		if c.stage == experimentStartInitialBusyThenReplay || c.stage == experimentStartFindRunsError || c.stage == experimentStartFindWorkspaceError || c.stage == experimentStartFindWorkspaceMissing || ((c.stage == experimentStartConflictReplay || c.stage == experimentStartConflictOther) && c.operationReads > 1) {
 			experimentID := "experiment-1"
 			if c.stage == experimentStartConflictOther {
 				experimentID = "other-experiment"
@@ -599,6 +711,10 @@ func (c *experimentStartFailureConnection) QueryContext(_ context.Context, query
 		if c.stage == experimentStartConditionQueryError {
 			return nil, errors.New("condition query failed")
 		}
+		state := "ready"
+		if c.stage == experimentStartNotReadySnapshotReadError || c.stage == experimentStartNotReadySnapshotReplay || c.stage == experimentStartNotReadySnapshotOther || c.stage == experimentStartNotReadySnapshotBusyThenReplay {
+			state = "preparing"
+		}
 		return &experimentStartFailureRows{
 			columns: []string{
 				"state",
@@ -611,7 +727,7 @@ func (c *experimentStartFailureConnection) QueryContext(_ context.Context, query
 			},
 			values: [][]driver.Value{
 				{
-					"ready",
+					state,
 					"condition-1",
 					"purpose",
 					nil,
@@ -666,7 +782,7 @@ func (c *experimentStartFailureConnection) QueryContext(_ context.Context, query
 		if c.stage == experimentStartFindWorkspaceError {
 			return nil, errors.New("workspace query failed")
 		}
-		if c.stage == experimentStartConflictReplay || c.stage == experimentStartConflictOther {
+		if c.stage == experimentStartInitialBusyThenReplay || c.stage == experimentStartNotReadySnapshotReplay || c.stage == experimentStartNotReadySnapshotOther || c.stage == experimentStartNotReadySnapshotBusyThenReplay || c.stage == experimentStartConflictReplay || c.stage == experimentStartConflictOther {
 			return &experimentStartFailureRows{
 				columns: []string{
 					"state",
