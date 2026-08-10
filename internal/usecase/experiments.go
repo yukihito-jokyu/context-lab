@@ -189,6 +189,45 @@ type ExperimentBriefingReader interface {
 	GetExperimentBriefing(context.Context, string) (domain.ExperimentBriefing, bool, error)
 }
 
+// ExperimentPreparationReader は実験準備画面を読み出すport。
+type ExperimentPreparationReader interface {
+	GetExperimentPreparation(context.Context, string) (domain.ExperimentPreparation, bool, error)
+}
+
+// GetExperimentPreparation は実験準備画面の再読込query。
+type GetExperimentPreparation struct {
+	reader ExperimentPreparationReader
+}
+
+// NewGetExperimentPreparation は実験準備再読込queryを生成。
+func NewGetExperimentPreparation(reader ExperimentPreparationReader) *GetExperimentPreparation {
+	return &GetExperimentPreparation{reader: reader}
+}
+
+// Execute は準備中実験の編集条件を取得。
+func (u *GetExperimentPreparation) Execute(ctx context.Context, experimentID string) (domain.ExperimentPreparation, error) {
+	if strings.TrimSpace(experimentID) == "" {
+		return domain.ExperimentPreparation{}, apperr.New(apperr.CodeBriefingRequestInvalid)
+	}
+
+	preparation, found, err := u.reader.GetExperimentPreparation(ctx, strings.TrimSpace(experimentID))
+	if err != nil {
+		if appErr := apperr.FromContextError(err); appErr != nil {
+			return domain.ExperimentPreparation{}, appErr
+		}
+
+		return domain.ExperimentPreparation{}, apperr.Wrap(apperr.CodeExperimentPreparationUnavailable, err)
+	}
+	if !found {
+		return domain.ExperimentPreparation{}, apperr.New(apperr.CodeExperimentPreparationNotFound)
+	}
+	if preparation.State != "preparing" {
+		return domain.ExperimentPreparation{}, apperr.New(apperr.CodeExperimentPreparationNotEditable)
+	}
+
+	return preparation, nil
+}
+
 // ExperimentBriefCreator は採用済みブリーフから準備中実験を作成するport。
 type ExperimentBriefCreator interface {
 	CreateExperimentFromBrief(context.Context, string, string, string) (domain.ExperimentCreation, bool, error)
