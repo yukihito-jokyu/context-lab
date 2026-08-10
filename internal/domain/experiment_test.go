@@ -54,3 +54,58 @@ func TestExperimentPreparationRequiredFields(t *testing.T) {
 		})
 	}
 }
+
+// 固定条件の必須入力検証。
+func TestExperimentFixedConditionsValid(t *testing.T) {
+	tests := []struct {
+		name       string
+		conditions ExperimentFixedConditions
+		want       bool
+	}{
+		{
+			name: "全条件が揃う",
+			conditions: ExperimentFixedConditions{
+				Purpose:               "目的",
+				EnvironmentConditions: "環境",
+				InitialInput:          "入力",
+				Prompts: []ExperimentPreparationPrompt{
+					{
+						SequenceNo: 1,
+						Content:    "prompt",
+					},
+				},
+				EvaluationAxes: "評価",
+			},
+			want: true,
+		},
+		{
+			name:       "必須条件不足",
+			conditions: ExperimentFixedConditions{},
+			want:       false,
+		},
+		{
+			name: "空白prompt",
+			conditions: ExperimentFixedConditions{
+				Purpose:               "目的",
+				EnvironmentConditions: "環境",
+				InitialInput:          "入力",
+				Prompts: []ExperimentPreparationPrompt{
+					{
+						SequenceNo: 1,
+						Content:    " ",
+					},
+				},
+				EvaluationAxes: "評価",
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.conditions.Valid(); got != tt.want {
+				t.Errorf("Valid() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

@@ -26,6 +26,11 @@ const (
 	CodeExperimentPreparationUnavailable Code = "EXPERIMENT_PREPARATION_UNAVAILABLE"
 	CodeDraftRequestInvalid              Code = "DRAFT_REQUEST_INVALID"
 	CodeDraftSaveFailed                  Code = "DRAFT_SAVE_FAILED"
+	CodeFixConditionsRequestInvalid      Code = "FIX_CONDITIONS_REQUEST_INVALID"
+	CodeExperimentConditionsAlreadyFixed Code = "EXPERIMENT_CONDITIONS_ALREADY_FIXED"
+	CodeExperimentConditionsConflict     Code = "EXPERIMENT_CONDITIONS_CONFLICT"
+	CodeFixConditionsSaveFailed          Code = "FIX_CONDITIONS_SAVE_FAILED"
+	CodeConditionsInvalid                Code = "CONDITIONS_INVALID"
 	CodeOperationTimeout                 Code = "OPERATION_TIMEOUT"
 	CodeOperationCanceled                Code = "OPERATION_CANCELED"
 	CodeUnexpected                       Code = "UNEXPECTED"
@@ -54,6 +59,11 @@ var defaultMessages = map[Code]message{
 	CodeExperimentPreparationUnavailable: "実験準備を取得できませんでした",
 	CodeDraftRequestInvalid:              "下書き保存要求が不正です",
 	CodeDraftSaveFailed:                  "下書きを保存できませんでした",
+	CodeFixConditionsRequestInvalid:      "条件固定要求が不正です",
+	CodeExperimentConditionsAlreadyFixed: "この実験の条件はすでに固定されています",
+	CodeExperimentConditionsConflict:     "固定する条件が現在の下書きと一致しません",
+	CodeFixConditionsSaveFailed:          "条件を固定できませんでした",
+	CodeConditionsInvalid:                "固定する条件が不足しています",
 	CodeOperationTimeout:                 "実験一覧の取得がタイムアウトしました",
 	CodeOperationCanceled:                "実験一覧の取得を中止しました",
 	CodeUnexpected:                       "予期しないエラーが発生しました",
