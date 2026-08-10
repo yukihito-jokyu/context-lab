@@ -567,7 +567,9 @@ func (s *Store) findExperimentWorkspaceRuns(ctx context.Context, experimentID st
 	if err != nil {
 		return nil, fmt.Errorf("query experiment workspace runs: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	runs := make([]domain.ExperimentWorkspaceRun, 0)
 	for rows.Next() {
@@ -600,7 +602,9 @@ func (s *Store) findExperimentWorkspaceEvaluations(ctx context.Context, experime
 	if err != nil {
 		return nil, fmt.Errorf("query experiment workspace evaluations: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	evaluations := make([]domain.ExperimentWorkspaceEvaluation, 0)
 	for rows.Next() {
