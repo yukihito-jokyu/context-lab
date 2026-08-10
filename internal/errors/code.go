@@ -66,6 +66,8 @@ const (
 	CodeDerivedExperimentSourceNotEligible    Code = "DERIVED_EXPERIMENT_SOURCE_NOT_ELIGIBLE"
 	CodeDerivedExperimentRequestConflict      Code = "DERIVED_EXPERIMENT_REQUEST_CONFLICT"
 	CodeDerivedExperimentUnavailable          Code = "DERIVED_EXPERIMENT_UNAVAILABLE"
+	CodeDerivationBriefingStartFailed         Code = "DERIVATION_BRIEFING_START_UNAVAILABLE"
+	CodeDerivationBriefingPending             Code = "DERIVATION_BRIEFING_PENDING"
 	CodeExperimentConclusionInvalid           Code = "EXPERIMENT_CONCLUSION_INVALID"
 	CodeExperimentConclusionNotFound          Code = "EXPERIMENT_CONCLUSION_NOT_FOUND"
 	CodeExperimentConclusionNotReady          Code = "EXPERIMENT_CONCLUSION_NOT_READY"
@@ -132,6 +134,8 @@ var defaultMessages = map[Code]message{
 	CodeExperimentComparisonInvalid:          "実験比較要求が不正です",
 	CodeExperimentComparisonNotFound:         "比較する実験が見つかりません",
 	CodeExperimentComparisonUnavailable:      "実験比較を取得できませんでした",
+	CodeDerivationBriefingStartFailed:        "派生実験の壁打ちを開始できませんでした",
+	CodeDerivationBriefingPending:            "派生実験の壁打ち開始を確認中です",
 	CodeExperimentConclusionInvalid:          "結論確定要求が不正です",
 	CodeExperimentConclusionNotFound:         "結論を確定する実験が見つかりません",
 	CodeExperimentConclusionNotReady:         "この実験はまだ結論を確定できません",
