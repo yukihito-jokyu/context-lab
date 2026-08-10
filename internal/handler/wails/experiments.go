@@ -172,6 +172,102 @@ type GetExperimentWorkspaceResponse struct {
 	Error *ErrorResponse              `json:"error,omitempty"`
 }
 
+// GetExperimentComparisonResponse は実験比較queryの成功または失敗結果。
+type GetExperimentComparisonResponse struct {
+	Data  *GetExperimentComparisonData `json:"data,omitempty"`
+	Error *ErrorResponse               `json:"error,omitempty"`
+}
+
+type GetExperimentComparisonData struct {
+	Experiment      ExperimentComparisonExperimentData   `json:"experiment"`
+	Evaluations     []ExperimentComparisonEvaluationData `json:"evaluations"`
+	LastConfirmedAt time.Time                            `json:"lastConfirmedAt"`
+}
+
+type ExperimentComparisonExperimentData struct {
+	ID             string `json:"id"`
+	Purpose        string `json:"purpose"`
+	EvaluationAxes string `json:"evaluationAxes"`
+}
+
+type ExperimentComparisonEvaluationData struct {
+	EvaluationID   string                             `json:"evaluationId"`
+	RunID          string                             `json:"runId"`
+	State          string                             `json:"state"`
+	RunSummary     *string                            `json:"runSummary,omitempty"`
+	Result         EvaluationDetailResultData         `json:"result"`
+	Reconciliation EvaluationDetailReconciliationData `json:"reconciliation"`
+	UpdatedAt      time.Time                          `json:"updatedAt"`
+}
+
+// ExperimentComparisonsHandler は実験比較queryのWails binding。
+type ExperimentComparisonsHandler struct {
+	getExperimentComparison *usecase.GetExperimentComparison
+	logger                  logger.Logger
+}
+
+// NewExperimentComparisonsHandler は実験比較bindingを生成する。
+func NewExperimentComparisonsHandler(query *usecase.GetExperimentComparison, appLogger logger.Logger) *ExperimentComparisonsHandler {
+	return &ExperimentComparisonsHandler{getExperimentComparison: query, logger: appLogger}
+}
+
+// GetExperimentComparison は実験の安全な比較結果を画面DTOで返す。
+func (h *ExperimentComparisonsHandler) GetExperimentComparison(experimentID string) GetExperimentComparisonResponse {
+	ctx := context.Background()
+	h.logger.Debug(ctx, "get experiment comparison called")
+	if h.getExperimentComparison == nil {
+		response := failGetExperimentComparison(apperr.New(apperr.CodeExperimentComparisonUnavailable))
+		h.logger.ErrorCode(ctx, "get experiment comparison failed", response.Error.Code, slog.String("operation", "get_experiment_comparison"))
+
+		return response
+	}
+	comparison, err := h.getExperimentComparison.Execute(ctx, experimentID)
+	if err != nil {
+		response := failGetExperimentComparison(err)
+		h.logger.ErrorCode(ctx, "get experiment comparison failed", response.Error.Code, slog.String("operation", "get_experiment_comparison"))
+
+		return response
+	}
+	evaluations := make([]ExperimentComparisonEvaluationData, 0, len(comparison.Evaluations))
+	for _, evaluation := range comparison.Evaluations {
+		evaluations = append(evaluations, ExperimentComparisonEvaluationData{
+			EvaluationID: evaluation.EvaluationID,
+			RunID:        evaluation.RunID,
+			State:        evaluation.State,
+			RunSummary:   evaluation.RunSummary,
+			Result: EvaluationDetailResultData{
+				Status:     evaluation.Result.Status,
+				Summary:    evaluation.Result.Summary,
+				ReasonCode: evaluation.Result.ReasonCode,
+			},
+			Reconciliation: EvaluationDetailReconciliationData{
+				State:          evaluation.Reconciliation.State,
+				LastObservedAt: evaluation.Reconciliation.LastObservedAt.UTC(),
+			},
+			UpdatedAt: evaluation.UpdatedAt.UTC(),
+		})
+	}
+	data := GetExperimentComparisonData{
+		Experiment: ExperimentComparisonExperimentData{
+			ID:             comparison.Experiment.ID,
+			Purpose:        comparison.Experiment.Purpose,
+			EvaluationAxes: comparison.Experiment.EvaluationAxes,
+		},
+		Evaluations:     evaluations,
+		LastConfirmedAt: comparison.LastConfirmedAt.UTC(),
+	}
+	return GetExperimentComparisonResponse{Data: &data}
+}
+
+// failGetExperimentComparison は内部エラーを安全な実験比較エラーへ変換する。
+func failGetExperimentComparison(err error) GetExperimentComparisonResponse {
+	appErr := apperr.As(err)
+	if appErr == nil {
+		appErr = apperr.NewUnexpected(err)
+	}
+	return GetExperimentComparisonResponse{Error: &ErrorResponse{Code: string(appErr.Code), Message: appErr.Error()}}
+}
+
 // GetExperimentWorkspaceData は画面へ返す固定条件と進行状況。
 type GetExperimentWorkspaceData struct {
 	ExperimentID          string                                 `json:"experimentId"`
