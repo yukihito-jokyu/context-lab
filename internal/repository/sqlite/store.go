@@ -38,6 +38,7 @@ type Store struct {
 	failBriefingMessageOperation func(context.Context, string, string) (sql.Result, error)
 	listPreparations             func(context.Context) (preparationRows, error)
 	briefingMessageMu            sync.Mutex
+	derivationBriefingMessageMu  sync.Mutex
 	listMu                       sync.Mutex
 }
 

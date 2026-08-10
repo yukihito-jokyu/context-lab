@@ -490,6 +490,70 @@ func TestBriefingPrompt(t *testing.T) {
 	}
 }
 
+// 派生壁打ちpromptの安全な制約を確認。
+func TestDerivationBriefingPrompt(t *testing.T) {
+	prompt := derivationBriefingPrompt("派生条件を比較したい")
+	if !containsAll(prompt, "ツール、ファイル、ネットワークを使わず", "資格情報、内部推論、プロセス情報を出力せず", "candidatePrompts", "派生条件を比較したい") {
+		t.Errorf("derivationBriefingPrompt() = %q, want safety and schema instructions", prompt)
+	}
+}
+
+// 派生壁打ちACP送信の成功と安全な失敗を確認。
+func TestCodexBriefingAdapterSendDerivationBriefMessage(t *testing.T) {
+	tests := []struct {
+		name        string
+		start       bool
+		fixtureMode string
+		wantCode    apperr.Code
+	}{
+		{
+			name:  "成功",
+			start: true,
+		},
+		{
+			name:     "未開始を派生専用エラーへ変換する",
+			wantCode: apperr.CodeDerivationBriefingMessageNotActive,
+		},
+		{
+			name:        "ACP送信失敗を安全な失敗へ変換する",
+			start:       true,
+			fixtureMode: "prompt-error",
+			wantCode:    apperr.CodeDerivationBriefingMessageFailed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("GO_WANT_ACP_FIXTURE", "1")
+			t.Setenv("ACP_FIXTURE_MODE", tt.fixtureMode)
+			adapter := newFixtureAdapter(t)
+			if tt.start {
+				if err := adapter.StartExperimentBriefing(context.Background(), "derivation-session", "operation-1"); err != nil {
+					t.Fatalf("StartExperimentBriefing() error = %v", err)
+				}
+			}
+			got, err := adapter.SendDerivationBriefMessage(context.Background(), "derivation-session", "operation-2", "派生案を比較したい")
+			if tt.wantCode != "" {
+				assertAppErrorCode(t, err, tt.wantCode)
+
+				return
+			}
+			if err != nil {
+				t.Fatalf("SendDerivationBriefMessage() error = %v", err)
+			}
+			if got.AssistantMessage != "実験案を整理しました" {
+				t.Errorf("AssistantMessage = %q, want %q", got.AssistantMessage, "実験案を整理しました")
+			}
+			if got.Suggestion == nil || got.Suggestion.Purpose != "要約比較" {
+				t.Errorf("Suggestion = %+v, want parsed suggestion", got.Suggestion)
+			}
+			if err := adapter.StopExperimentBriefing(context.Background(), "derivation-session", "operation-3"); err != nil {
+				t.Errorf("StopExperimentBriefing() error = %v", err)
+			}
+		})
+	}
+}
+
 func pointer(value string) *string {
 	return &value
 }
@@ -543,6 +607,57 @@ func TestNotReadyBriefingMessageSenderSendExperimentBriefMessage(t *testing.T) {
 				t.Fatal("apperr.As() = nil, want app error")
 			} else if got.Code != apperr.CodeACPNotReady {
 				t.Errorf("Code = %q, want %q", got.Code, apperr.CodeACPNotReady)
+			}
+		})
+	}
+}
+
+// ACP未準備adapterの派生会話送信安全な失敗返却。
+func TestNotReadyBriefingMessageSenderSendDerivationBriefMessage(t *testing.T) {
+	_, err := (NotReadyBriefingMessageSender{}).SendDerivationBriefMessage(context.Background(), "session", "operation", "message")
+	assertAppErrorCode(t, err, apperr.CodeACPNotReady)
+}
+
+// 派生壁打ちACP応答の生文を保存可能な会話へ変換しないことを確認。
+func TestParseDerivationBriefingResponse(t *testing.T) {
+	tests := []struct {
+		name           string
+		response       string
+		wantAssistant  string
+		wantSuggestion bool
+	}{
+		{
+			name:          "JSON以外は安全な定型文へ変換する",
+			response:      "internal reasoning and credential",
+			wantAssistant: "提案を安全に解析できませんでした。もう一度お試しください。",
+		},
+		{
+			name:          "不正JSONは安全な定型文へ変換する",
+			response:      `prefix {"assistantMessage": } suffix`,
+			wantAssistant: "提案を安全に解析できませんでした。もう一度お試しください。",
+		},
+		{
+			name:           "構造化JSONを安全に変換する",
+			response:       `{"assistantMessage":"比較案を整理しました","brief":{"purpose":"比較","decision":"判断","candidatePrompts":[],"evaluationCriteria":"正確性","environmentConditions":"同一","initialInput":"入力","successCriteria":"成功","requiredConditions":"固定"}}`,
+			wantAssistant:  "比較案を整理しました",
+			wantSuggestion: true,
+		},
+		{
+			name:           "会話文のないJSONは安全な定型文へ変換する",
+			response:       `{"brief":{"purpose":"比較"}}`,
+			wantAssistant:  "提案を安全に解析できませんでした。もう一度お試しください。",
+			wantSuggestion: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseDerivationBriefingResponse(tt.response)
+			if got.AssistantMessage != tt.wantAssistant {
+				t.Errorf("AssistantMessage = %q, want %q", got.AssistantMessage, tt.wantAssistant)
+			}
+			if gotSuggestion := got.Suggestion != nil; gotSuggestion != tt.wantSuggestion {
+				t.Errorf("Suggestion found = %v, want %v", gotSuggestion, tt.wantSuggestion)
 			}
 		})
 	}
