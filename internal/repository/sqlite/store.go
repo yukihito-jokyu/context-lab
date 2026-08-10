@@ -32,6 +32,7 @@ type Store struct {
 	db                           *sql.DB
 	beginBriefingTransaction     func(context.Context) (briefingTransaction, error)
 	failBriefingMessageOperation func(context.Context, string, string) (sql.Result, error)
+	listPreparations             func(context.Context) (preparationRows, error)
 	briefingMessageMu            sync.Mutex
 	listMu                       sync.Mutex
 }
@@ -59,6 +60,14 @@ func Open(dataDirectory string) (*Store, error) {
 		},
 		failBriefingMessageOperation: func(ctx context.Context, requestID, failureCode string) (sql.Result, error) {
 			return db.ExecContext(ctx, "UPDATE briefing_message_operations SET state = ?, failure_code = ? WHERE request_id = ?", domain.BriefingStartStateFailed, failureCode, requestID)
+		},
+		listPreparations: func(ctx context.Context) (preparationRows, error) {
+			rows, err := db.QueryContext(ctx, listPreparationsQuery, environmentPreparationKind)
+			if err != nil {
+				return nil, err
+			}
+
+			return sqlitePreparationRows{rows: rows}, nil
 		},
 	}
 	if err := store.migrate(context.Background()); err != nil {

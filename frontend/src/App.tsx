@@ -1,3 +1,5 @@
+import { EnvironmentPreparationListPage } from "@/features/environment-preparation/EnvironmentPreparationListPage";
+import { listPreparations } from "@/features/environment-preparation/services/list-preparations-service";
 import { ExperimentListPage } from "@/features/experiments/ExperimentListPage";
 import { ExperimentPreparationPage } from "@/features/experiments/ExperimentPreparationPage";
 import { createExperimentFromBrief } from "@/features/experiments/services/create-experiment-from-brief-service";
@@ -17,6 +19,12 @@ function decodeExperimentID(value: string) {
 }
 
 export default function App() {
+  if (window.location.pathname === "/preparations") {
+    return (
+      <EnvironmentPreparationListPage listPreparations={listPreparations} />
+    );
+  }
+
   const preparationMatch = window.location.pathname.match(
     /^\/experiments\/([^/]+)\/preparation$/,
   );
