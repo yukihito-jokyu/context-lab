@@ -447,11 +447,11 @@ func (s *Store) GetExperimentBriefing(ctx context.Context, briefingSessionID str
 }
 
 // GetExperimentPreparation は準備中実験の編集条件を読み出す。
-func (s *Store) GetExperimentPreparation(ctx context.Context, experimentID string) (domain.ExperimentPreparation, bool, error) {
-	preparation := domain.ExperimentPreparation{ExperimentID: experimentID}
+func (s *Store) GetExperimentPreparation(ctx context.Context, experimentID string) (preparation domain.ExperimentPreparation, found bool, err error) {
+	preparation = domain.ExperimentPreparation{ExperimentID: experimentID}
 	var hypothesis sql.NullString
 	var updatedAt string
-	err := s.db.QueryRowContext(ctx, "SELECT e.state, e.purpose, p.hypothesis, p.environment_conditions, p.initial_input, p.evaluation_criteria, p.briefing_version_id, b.decision, p.updated_at FROM experiments e JOIN experiment_preparations p ON p.experiment_id = e.id JOIN briefing_versions b ON b.id = p.briefing_version_id WHERE e.id = ?", experimentID).Scan(&preparation.State, &preparation.Purpose, &hypothesis, &preparation.EnvironmentConditions, &preparation.InitialInput, &preparation.EvaluationAxes, &preparation.Source.VersionID, &preparation.Source.State, &updatedAt)
+	err = s.db.QueryRowContext(ctx, "SELECT e.state, e.purpose, p.hypothesis, p.environment_conditions, p.initial_input, p.evaluation_criteria, p.briefing_version_id, b.decision, p.updated_at FROM experiments e JOIN experiment_preparations p ON p.experiment_id = e.id JOIN briefing_versions b ON b.id = p.briefing_version_id WHERE e.id = ?", experimentID).Scan(&preparation.State, &preparation.Purpose, &hypothesis, &preparation.EnvironmentConditions, &preparation.InitialInput, &preparation.EvaluationAxes, &preparation.Source.VersionID, &preparation.Source.State, &updatedAt)
 	if err == sql.ErrNoRows {
 		return domain.ExperimentPreparation{}, false, nil
 	}
@@ -471,7 +471,11 @@ func (s *Store) GetExperimentPreparation(ctx context.Context, experimentID strin
 	if err != nil {
 		return domain.ExperimentPreparation{}, false, fmt.Errorf("query experiment preparation prompts: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("close experiment preparation prompt rows: %w", closeErr)
+		}
+	}()
 
 	preparation.Prompts = make([]domain.ExperimentPreparationPrompt, 0)
 	for rows.Next() {
