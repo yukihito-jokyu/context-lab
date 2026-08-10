@@ -1,4 +1,6 @@
+import { EnvironmentPreparationDetailPage } from "@/features/environment-preparation/EnvironmentPreparationDetailPage";
 import { EnvironmentPreparationListPage } from "@/features/environment-preparation/EnvironmentPreparationListPage";
+import { getPreparation } from "@/features/environment-preparation/services/get-preparation-service";
 import { listPreparations } from "@/features/environment-preparation/services/list-preparations-service";
 import { ComparisonPage } from "@/features/experiments/ComparisonPage";
 import { CreateDerivedExperimentPage } from "@/features/experiments/CreateDerivedExperimentPage";
@@ -44,6 +46,20 @@ function decodeExperimentID(value: string) {
 }
 
 export default function App() {
+  const preparationDetailMatch = window.location.pathname.match(
+    /^\/preparations\/([^/]+)$/,
+  );
+
+  if (preparationDetailMatch) {
+    return (
+      <EnvironmentPreparationDetailPage
+        getPreparation={getPreparation}
+        onBackToList={() => window.location.assign("/preparations")}
+        preparationId={decodeExperimentID(preparationDetailMatch[1])}
+      />
+    );
+  }
+
   if (window.location.pathname === "/preparations") {
     return (
       <EnvironmentPreparationListPage listPreparations={listPreparations} />

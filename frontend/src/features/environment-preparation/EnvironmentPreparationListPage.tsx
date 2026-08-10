@@ -34,6 +34,8 @@ function PreparationSessionCard({
 }: {
   preparation: PreparationListItem;
 }) {
+  const detailPath = `/preparations/${encodeURIComponent(preparation.preparationId)}`;
+
   return (
     <li>
       <Card>
@@ -56,6 +58,9 @@ function PreparationSessionCard({
               <dd>{formatExperimentDateTime(preparation.lastObservedAt)}</dd>
             </div>
           </dl>
+          <Button asChild size="sm" variant="outline">
+            <a href={detailPath}>詳細を確認</a>
+          </Button>
         </CardContent>
       </Card>
     </li>
