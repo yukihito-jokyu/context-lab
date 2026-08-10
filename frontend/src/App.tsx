@@ -12,6 +12,7 @@ import { listExperiments } from "@/features/experiments/services/list-experiment
 import { saveExperimentPreparationDraft } from "@/features/experiments/services/save-experiment-preparation-draft-service";
 import { sendExperimentBriefMessage } from "@/features/experiments/services/send-experiment-brief-message-service";
 import { startExperimentBriefing } from "@/features/experiments/services/start-experiment-briefing-service";
+import { startExperiment } from "@/features/experiments/services/start-experiment-service";
 import { stopExperimentBriefing } from "@/features/experiments/services/stop-experiment-briefing-service";
 
 function decodeExperimentID(value: string) {
@@ -41,6 +42,7 @@ export default function App() {
       <ExperimentWorkspacePage
         experimentId={decodeExperimentID(workspaceMatch[1])}
         getExperimentWorkspace={getExperimentWorkspace}
+        startExperiment={startExperiment}
       />
     );
   }
