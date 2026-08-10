@@ -15,6 +15,9 @@ const meta = {
         sourceExperimentId,
       },
     }),
+    sendDerivationBriefMessage: async () => ({
+      data: { operationId: "derivation-message-operation-22" },
+    }),
   },
 } satisfies Meta<typeof DerivationBriefingDialog>;
 
@@ -37,5 +40,22 @@ export const StartFailure: Story = {
         message: "壁打ちを開始できませんでした。",
       },
     }),
+  },
+};
+
+export const SendFailure: Story = {
+  args: {
+    sendDerivationBriefMessage: async () => ({
+      error: {
+        code: "DERIVATION_BRIEFING_MESSAGE_UNAVAILABLE",
+        message: "壁打ちメッセージを送信できませんでした。",
+      },
+    }),
+  },
+};
+
+export const SendPending: Story = {
+  args: {
+    sendDerivationBriefMessage: () => new Promise<never>(() => undefined),
   },
 };
