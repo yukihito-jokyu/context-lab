@@ -19,6 +19,7 @@ type StartRunEvaluationResponse = Record<string, unknown> & {
   result?: Record<string, unknown>;
 };
 type GetRunDetailResponse = Record<string, unknown>;
+type GetEvaluationDetailResponse = Record<string, unknown>;
 type ListPreparationsResponse = Record<string, unknown>;
 
 declare global {
@@ -265,6 +266,26 @@ async function installRunDetailMock(
         GetRunDetail: () => {
           const response = runDetailResponses[Math.min(runDetailCallCount, runDetailResponses.length - 1)];
           runDetailCallCount += 1;
+          return Promise.resolve(response);
+        },
+      };
+    `,
+  });
+}
+
+async function installEvaluationDetailMock(
+  page: Page,
+  responses: GetEvaluationDetailResponse[],
+) {
+  await page.addInitScript({
+    content: `
+      const evaluationDetailResponses = ${JSON.stringify(responses)};
+      let evaluationDetailCallCount = 0;
+      window.go = window.go || { wails: {} };
+      window.go.wails.ExperimentEvaluationDetailsHandler = {
+        GetEvaluationDetail: () => {
+          const response = evaluationDetailResponses[Math.min(evaluationDetailCallCount, evaluationDetailResponses.length - 1)];
+          evaluationDetailCallCount += 1;
           return Promise.resolve(response);
         },
       };
@@ -1371,6 +1392,28 @@ test("完了したrunから評価を開始し、評価到達画面へ遷移す�
       },
     },
   ]);
+  await installEvaluationDetailMock(page, [
+    {
+      data: {
+        evaluation: {
+          id: "evaluation-20",
+          experimentId: "EXP-020",
+          runId: "run-20",
+          state: "starting",
+          updatedAt: confirmedAt,
+        },
+        operation: {
+          id: "evaluation-operation-20",
+          state: "starting",
+          updatedAt: confirmedAt,
+        },
+        evidence: { runSummary: "", evaluationAxes: "正確性" },
+        result: { status: "notRecorded" },
+        reconciliation: { state: "starting", lastObservedAt: confirmedAt },
+        lastConfirmedAt: confirmedAt,
+      },
+    },
+  ]);
   await page.goto("/experiments/EXP-020/workspace");
 
   await page.locator("#start-run-evaluation-button-run-20").click();
@@ -1378,12 +1421,121 @@ test("完了したrunから評価を開始し、評価到達画面へ遷移す�
   await expect(page).toHaveURL(
     /\/evaluations\/evaluation-20\?operationId=evaluation-operation-20$/,
   );
-  await expect(page.locator("#evaluation-operation-page")).toContainText(
-    "評価ID: evaluation-20",
+  await expect(page).toHaveURL(
+    /\/evaluations\/evaluation-20\?operationId=evaluation-operation-20$/,
   );
-  await expect(page.locator("#evaluation-operation-page")).toContainText(
+  await expect(page.locator("main")).toContainText("評価ID: evaluation-20");
+  await expect(page.locator("main")).toContainText(
     "操作ID: evaluation-operation-20",
   );
+  await expect(page.locator("#evaluation-detail-progress")).toContainText(
+    "照合しています",
+  );
+});
+
+test("評価詳細は根拠と確定した評価結果を表示する", async ({ page }) => {
+  await installEvaluationDetailMock(page, [
+    {
+      data: {
+        evaluation: {
+          id: "evaluation-25",
+          experimentId: "EXP-025",
+          runId: "run-25",
+          state: "completed",
+          updatedAt: confirmedAt,
+        },
+        operation: {
+          id: "evaluation-operation-25",
+          state: "completed",
+          updatedAt: confirmedAt,
+        },
+        evidence: {
+          runSummary: "請求日を含めた回答を生成しました。",
+          evaluationAxes: "正確性、要点保持",
+        },
+        result: { status: "complete", summary: "評価軸を満たしています。" },
+        reconciliation: { state: "confirmed", lastObservedAt: confirmedAt },
+        lastConfirmedAt: confirmedAt,
+      },
+    },
+  ]);
+  await page.goto(
+    "/evaluations/evaluation-25?operationId=evaluation-operation-25",
+  );
+
+  await expect(page.locator("#evaluation-detail-evidence")).toContainText(
+    "請求日を含めた回答を生成しました。",
+  );
+  await expect(page.locator("#evaluation-detail-result")).toContainText(
+    "評価軸を満たしています。",
+  );
+});
+
+test("評価詳細は不能理由を表示し、取得失敗後に再読込できる", async ({
+  page,
+}) => {
+  await installEvaluationDetailMock(page, [
+    {
+      data: {
+        evaluation: {
+          id: "evaluation-26",
+          experimentId: "EXP-026",
+          runId: "run-26",
+          state: "failed",
+          updatedAt: confirmedAt,
+        },
+        operation: {
+          id: "evaluation-operation-26",
+          state: "failed",
+          updatedAt: confirmedAt,
+        },
+        evidence: { runSummary: "取得済みの根拠", evaluationAxes: "正確性" },
+        result: { status: "notRecorded", reasonCode: "EVALUATION_UNAVAILABLE" },
+        failure: { code: "EVALUATION_UNAVAILABLE", occurredAt: confirmedAt },
+        reconciliation: { state: "confirmed", lastObservedAt: confirmedAt },
+        lastConfirmedAt: confirmedAt,
+      },
+    },
+  ]);
+  await page.goto("/evaluations/evaluation-26");
+  await expect(page.locator("#evaluation-detail-unavailable")).toContainText(
+    "EVALUATION_UNAVAILABLE",
+  );
+
+  await installEvaluationDetailMock(page, [
+    {
+      error: {
+        code: "EVALUATION_DETAIL_UNAVAILABLE",
+        message: "一時的に取得できません。",
+      },
+    },
+    {
+      data: {
+        evaluation: {
+          id: "evaluation-27",
+          experimentId: "EXP-027",
+          runId: "run-27",
+          state: "completed",
+          updatedAt: confirmedAt,
+        },
+        operation: {
+          id: "evaluation-operation-27",
+          state: "completed",
+          updatedAt: confirmedAt,
+        },
+        evidence: { runSummary: "再読込後の根拠", evaluationAxes: "正確性" },
+        result: { status: "complete", summary: "再読込後の評価結果" },
+        reconciliation: { state: "confirmed", lastObservedAt: confirmedAt },
+        lastConfirmedAt: confirmedAt,
+      },
+    },
+  ]);
+  await page.goto("/evaluations/evaluation-27");
+  await expect(page.locator("#evaluation-detail-error")).toContainText(
+    "一時的に取得できません。",
+  );
+  await page.locator("#reload-evaluation-detail-button").click();
+  await expect(page.getByText("再読込後の評価結果")).toBeVisible();
 });
 
 test("run詳細は観測、差分、照合中と部分取得を表示する", async ({ page }) => {
