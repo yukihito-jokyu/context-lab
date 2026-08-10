@@ -77,6 +77,12 @@ const (
 	CodeDerivationBriefingMessageRequestConflict Code = "DERIVATION_BRIEFING_MESSAGE_REQUEST_CONFLICT"
 	CodeDerivationBriefingMessagePending         Code = "DERIVATION_BRIEFING_MESSAGE_PENDING"
 	CodeDerivationBriefingMessageFailed          Code = "DERIVATION_BRIEFING_MESSAGE_UNAVAILABLE"
+	CodeDerivationBriefingStopInvalid            Code = "DERIVATION_BRIEFING_STOP_INVALID"
+	CodeDerivationBriefingStopNotFound           Code = "DERIVATION_BRIEFING_STOP_NOT_FOUND"
+	CodeDerivationBriefingStopNotActive          Code = "DERIVATION_BRIEFING_STOP_NOT_ACTIVE"
+	CodeDerivationBriefingStopRequestConflict    Code = "DERIVATION_BRIEFING_STOP_REQUEST_CONFLICT"
+	CodeDerivationBriefingStopPending            Code = "DERIVATION_BRIEFING_STOP_PENDING"
+	CodeDerivationBriefingStopFailed             Code = "DERIVATION_BRIEFING_STOP_UNAVAILABLE"
 	CodeExperimentConclusionInvalid              Code = "EXPERIMENT_CONCLUSION_INVALID"
 	CodeExperimentConclusionNotFound             Code = "EXPERIMENT_CONCLUSION_NOT_FOUND"
 	CodeExperimentConclusionNotReady             Code = "EXPERIMENT_CONCLUSION_NOT_READY"
@@ -154,6 +160,12 @@ var defaultMessages = map[Code]message{
 	CodeDerivationBriefingMessageRequestConflict: "この送信要求は別の壁打ちに使用されています",
 	CodeDerivationBriefingMessagePending:         "派生実験の壁打ちメッセージ送信を確認中です",
 	CodeDerivationBriefingMessageFailed:          "派生実験の壁打ちへメッセージを送信できませんでした",
+	CodeDerivationBriefingStopInvalid:            "派生実験の壁打ち終了要求が不正です",
+	CodeDerivationBriefingStopNotFound:           "派生実験の壁打ちが見つかりません",
+	CodeDerivationBriefingStopNotActive:          "派生実験の壁打ちは終了できる状態ではありません",
+	CodeDerivationBriefingStopRequestConflict:    "この終了要求は別の壁打ちに使用されています",
+	CodeDerivationBriefingStopPending:            "派生実験の壁打ち終了を確認中です",
+	CodeDerivationBriefingStopFailed:             "派生実験の壁打ちを終了できませんでした",
 	CodeExperimentConclusionInvalid:              "結論確定要求が不正です",
 	CodeExperimentConclusionNotFound:             "結論を確定する実験が見つかりません",
 	CodeExperimentConclusionNotReady:             "この実験はまだ結論を確定できません",

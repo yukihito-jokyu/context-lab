@@ -35,6 +35,17 @@ type SendDerivationBriefMessageData struct {
 	OperationID string `json:"operationId"`
 }
 
+// StopDerivationBriefingResponse は派生実験ブリーフ終了の成功または失敗結果。
+type StopDerivationBriefingResponse struct {
+	Data  *StopDerivationBriefingData `json:"data,omitempty"`
+	Error *ErrorResponse              `json:"error,omitempty"`
+}
+
+// StopDerivationBriefingData は画面へ返す終了操作識別子。
+type StopDerivationBriefingData struct {
+	OperationID string `json:"operationId"`
+}
+
 // GetDerivationBriefingResponse は派生実験ブリーフ再読込の成功または失敗結果。
 type GetDerivationBriefingResponse struct {
 	Data  *GetDerivationBriefingData `json:"data,omitempty"`
@@ -79,17 +90,35 @@ type DerivationBriefingsHandler struct {
 	command                    *usecase.StartDerivationBriefing
 	sendDerivationBriefMessage *usecase.SendDerivationBriefMessage
 	getDerivationBriefing      *usecase.GetDerivationBriefing
+	stopDerivationBriefing     *usecase.StopDerivationBriefing
 	logger                     logger.Logger
 }
 
 // NewDerivationBriefingsHandler は派生実験ブリーフbindingを生成する。
-func NewDerivationBriefingsHandler(command *usecase.StartDerivationBriefing, sendDerivationBriefMessage *usecase.SendDerivationBriefMessage, getDerivationBriefing *usecase.GetDerivationBriefing, appLogger logger.Logger) *DerivationBriefingsHandler {
+func NewDerivationBriefingsHandler(command *usecase.StartDerivationBriefing, sendDerivationBriefMessage *usecase.SendDerivationBriefMessage, getDerivationBriefing *usecase.GetDerivationBriefing, stopDerivationBriefing *usecase.StopDerivationBriefing, appLogger logger.Logger) *DerivationBriefingsHandler {
 	return &DerivationBriefingsHandler{
 		command:                    command,
 		sendDerivationBriefMessage: sendDerivationBriefMessage,
 		getDerivationBriefing:      getDerivationBriefing,
+		stopDerivationBriefing:     stopDerivationBriefing,
 		logger:                     appLogger,
 	}
+}
+
+// StopDerivationBriefing は派生実験ブリーフ終了を画面向けDTOで返す。
+func (h *DerivationBriefingsHandler) StopDerivationBriefing(requestID, briefingSessionID string) StopDerivationBriefingResponse {
+	ctx := context.Background()
+	h.logger.Info(ctx, "stop derivation briefing called")
+	if h.stopDerivationBriefing == nil {
+		return h.failStop(ctx, apperr.New(apperr.CodeDerivationBriefingStopFailed))
+	}
+
+	operation, err := h.stopDerivationBriefing.Execute(ctx, requestID, briefingSessionID)
+	if err != nil {
+		return h.failStop(ctx, err)
+	}
+
+	return StopDerivationBriefingResponse{Data: &StopDerivationBriefingData{OperationID: operation.OperationID}}
 }
 
 // GetDerivationBriefing は派生実験ブリーフを画面向けDTOで返す。
@@ -165,6 +194,17 @@ func (h *DerivationBriefingsHandler) failMessage(ctx context.Context, err error)
 	h.logger.ErrorCode(ctx, "send derivation brief message failed", string(appErr.Code), slog.String("operation", "send_derivation_brief_message"))
 
 	return SendDerivationBriefMessageResponse{Error: &ErrorResponse{Code: string(appErr.Code), Message: appErr.Error()}}
+}
+
+// failStop は内部エラーを安全な派生壁打ち終了エラーへ変換する。
+func (h *DerivationBriefingsHandler) failStop(ctx context.Context, err error) StopDerivationBriefingResponse {
+	appErr := apperr.As(err)
+	if appErr == nil {
+		appErr = apperr.NewUnexpected(err)
+	}
+	h.logger.ErrorCode(ctx, "stop derivation briefing failed", string(appErr.Code), slog.String("operation", "stop_derivation_briefing"))
+
+	return StopDerivationBriefingResponse{Error: &ErrorResponse{Code: string(appErr.Code), Message: appErr.Error()}}
 }
 
 // failGet は内部エラーを安全な派生ブリーフ取得エラーへ変換する。

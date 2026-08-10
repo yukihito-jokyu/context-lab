@@ -41,7 +41,7 @@ func TestDerivationBriefingsHandlerStartDerivationBriefing(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			appLogger := &derivationBriefingHandlerLogger{}
-			got := NewDerivationBriefingsHandler(tt.command, nil, nil, appLogger).StartDerivationBriefing("request-1", "source-1")
+			got := NewDerivationBriefingsHandler(tt.command, nil, nil, nil, appLogger).StartDerivationBriefing("request-1", "source-1")
 			if tt.wantCode == "" {
 				if got.Data == nil || got.Data.SourceExperimentID != "source-1" || got.Data.BriefingSessionID != "session-1" {
 					t.Errorf("Data = %+v, want derivation briefing identifiers", got.Data)
@@ -62,7 +62,7 @@ func TestDerivationBriefingsHandlerStartDerivationBriefing(t *testing.T) {
 // DerivationBriefingsHandlerの未知エラー変換を確認。
 func TestDerivationBriefingsHandlerFailureFallback(t *testing.T) {
 	appLogger := &derivationBriefingHandlerLogger{}
-	got := NewDerivationBriefingsHandler(nil, nil, nil, appLogger).fail(context.Background(), errors.New("private credential"))
+	got := NewDerivationBriefingsHandler(nil, nil, nil, nil, appLogger).fail(context.Background(), errors.New("private credential"))
 	if got.Error == nil || got.Error.Code != string(apperr.CodeUnexpected) {
 		t.Errorf("Error = %+v, want unexpected safe error", got.Error)
 	}
@@ -102,7 +102,7 @@ func TestDerivationBriefingsHandlerSendDerivationBriefMessage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			appLogger := &derivationBriefingHandlerLogger{}
-			handler := NewDerivationBriefingsHandler(nil, tt.command, nil, appLogger)
+			handler := NewDerivationBriefingsHandler(nil, tt.command, nil, nil, appLogger)
 			got := handler.SendDerivationBriefMessage("request-1", "session-1", "比較したい")
 			if tt.wantCode == "" {
 				if got.Data == nil || got.Data.OperationID == "" {
@@ -124,7 +124,7 @@ func TestDerivationBriefingsHandlerSendDerivationBriefMessage(t *testing.T) {
 // DerivationBriefingsHandlerの派生会話送信未知エラー変換を確認。
 func TestDerivationBriefingsHandlerMessageFailureFallback(t *testing.T) {
 	appLogger := &derivationBriefingHandlerLogger{}
-	got := NewDerivationBriefingsHandler(nil, nil, nil, appLogger).failMessage(context.Background(), errors.New("private credential"))
+	got := NewDerivationBriefingsHandler(nil, nil, nil, nil, appLogger).failMessage(context.Background(), errors.New("private credential"))
 	if got.Error == nil || got.Error.Code != string(apperr.CodeUnexpected) {
 		t.Errorf("Error = %+v, want unexpected safe error", got.Error)
 	}
@@ -184,7 +184,7 @@ func TestDerivationBriefingsHandlerGetDerivationBriefing(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			appLogger := &derivationBriefingHandlerLogger{}
-			handler := NewDerivationBriefingsHandler(nil, nil, usecase.NewGetDerivationBriefing(tt.reader), appLogger)
+			handler := NewDerivationBriefingsHandler(nil, nil, usecase.NewGetDerivationBriefing(tt.reader), nil, appLogger)
 			got := handler.GetDerivationBriefing(tt.session)
 			if gotData := got.Data != nil; gotData != tt.wantData {
 				t.Fatalf("Data available = %v, want %v", gotData, tt.wantData)
@@ -215,9 +215,67 @@ func TestDerivationBriefingsHandlerGetDerivationBriefing(t *testing.T) {
 // DerivationBriefingsHandlerの派生会話再読込依存欠落を確認。
 func TestDerivationBriefingsHandlerGetDerivationBriefingMissingDependency(t *testing.T) {
 	appLogger := &derivationBriefingHandlerLogger{}
-	got := NewDerivationBriefingsHandler(nil, nil, nil, appLogger).GetDerivationBriefing("session-1")
+	got := NewDerivationBriefingsHandler(nil, nil, nil, nil, appLogger).GetDerivationBriefing("session-1")
 	if got.Error == nil || got.Error.Code != string(apperr.CodeDerivationBriefingUnavailable) {
 		t.Errorf("Error = %+v, want %q", got.Error, apperr.CodeDerivationBriefingUnavailable)
+	}
+}
+
+// DerivationBriefingsHandlerの派生壁打ち終了DTOを確認。
+func TestDerivationBriefingsHandlerStopDerivationBriefing(t *testing.T) {
+	tests := []struct {
+		name       string
+		stopperErr error
+		wantCode   apperr.Code
+	}{
+		{
+			name: "終了操作識別子だけを返す",
+		},
+		{
+			name:       "内部エラーを安全なコードへ変換する",
+			stopperErr: errors.New("private ACP credential"),
+			wantCode:   apperr.CodeDerivationBriefingStopFailed,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			appLogger := &derivationBriefingHandlerLogger{}
+			handler := NewDerivationBriefingsHandler(nil, nil, nil, usecase.NewStopDerivationBriefing(&derivationBriefingStopHandlerStore{}, derivationBriefingStopHandler{err: tt.stopperErr}), appLogger)
+			got := handler.StopDerivationBriefing("request-1", "session-1")
+			if tt.wantCode != "" {
+				if got.Error == nil || got.Error.Code != string(tt.wantCode) {
+					t.Errorf("Error = %+v, want %q", got.Error, tt.wantCode)
+				}
+				if got.Data != nil {
+					t.Errorf("Data = %+v, want nil", got.Data)
+				}
+				if appLogger.code != string(tt.wantCode) || appLogger.operation != "stop_derivation_briefing" {
+					t.Errorf("safe error log = (%q, %q)", appLogger.code, appLogger.operation)
+				}
+
+				return
+			}
+			if got.Error != nil {
+				t.Fatalf("Error = %+v, want nil", got.Error)
+			}
+			if got.Data == nil || got.Data.OperationID != "stop-operation-1" {
+				t.Errorf("Data = %+v, want stop operation identifier", got.Data)
+			}
+		})
+	}
+}
+
+// DerivationBriefingsHandlerの終了依存欠落と未知エラー変換を確認。
+func TestDerivationBriefingsHandlerStopDerivationBriefingFailureFallback(t *testing.T) {
+	appLogger := &derivationBriefingHandlerLogger{}
+	handler := NewDerivationBriefingsHandler(nil, nil, nil, nil, appLogger)
+	got := handler.StopDerivationBriefing("request-1", "session-1")
+	if got.Error == nil || got.Error.Code != string(apperr.CodeDerivationBriefingStopFailed) {
+		t.Errorf("missing dependency Error = %+v, want %q", got.Error, apperr.CodeDerivationBriefingStopFailed)
+	}
+	got = handler.failStop(context.Background(), errors.New("private ACP credential"))
+	if got.Error == nil || got.Error.Code != string(apperr.CodeUnexpected) {
+		t.Errorf("fallback Error = %+v, want %q", got.Error, apperr.CodeUnexpected)
 	}
 }
 
@@ -233,6 +291,37 @@ type derivationBriefingHandlerStore struct{ beginErr error }
 
 // derivationBriefingMessageHandlerStore はhandler用会話送信記録portのtest double。
 type derivationBriefingMessageHandlerStore struct{ beginErr error }
+
+// derivationBriefingStopHandlerStore はhandler用終了記録portのtest double。
+type derivationBriefingStopHandlerStore struct{}
+
+// BeginStopDerivationBriefing は開始中の終了操作を返す。
+func (*derivationBriefingStopHandlerStore) BeginStopDerivationBriefing(_ context.Context, requestID, briefingSessionID string) (domain.DerivationBriefingStopOperation, bool, error) {
+	return domain.DerivationBriefingStopOperation{
+		RequestID:         requestID,
+		BriefingSessionID: briefingSessionID,
+		OperationID:       "stop-operation-1",
+		State:             domain.BriefingStartStateStarting,
+	}, true, nil
+}
+
+// CompleteStopDerivationBriefing は終了完了を受理する。
+func (*derivationBriefingStopHandlerStore) CompleteStopDerivationBriefing(context.Context, string) error {
+	return nil
+}
+
+// FailStopDerivationBriefing は終了失敗を受理する。
+func (*derivationBriefingStopHandlerStore) FailStopDerivationBriefing(context.Context, string, string) error {
+	return nil
+}
+
+// derivationBriefingStopHandler はhandler用ACP停止portのtest double。
+type derivationBriefingStopHandler struct{ err error }
+
+// StopDerivationBriefing は指定済み停止結果を返す。
+func (s derivationBriefingStopHandler) StopDerivationBriefing(context.Context, string, string) error {
+	return s.err
+}
 
 // derivationBriefingHandlerReader はhandler用派生実験ブリーフ読み出しportのtest double。
 type derivationBriefingHandlerReader struct {

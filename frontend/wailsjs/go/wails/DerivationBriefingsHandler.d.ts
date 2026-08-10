@@ -7,3 +7,5 @@ export function GetDerivationBriefing(arg1:string):Promise<wails.GetDerivationBr
 export function SendDerivationBriefMessage(arg1:string,arg2:string,arg3:string):Promise<wails.SendDerivationBriefMessageResponse>;
 
 export function StartDerivationBriefing(arg1:string,arg2:string):Promise<wails.StartDerivationBriefingResponse>;
+
+export function StopDerivationBriefing(arg1:string,arg2:string):Promise<wails.StopDerivationBriefingResponse>;

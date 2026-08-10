@@ -114,6 +114,24 @@ func (a *CodexBriefingAdapter) StopExperimentBriefing(ctx context.Context, brief
 	return nil
 }
 
+// StopDerivationBriefing は派生実験のACP sessionを閉じ、sidecarを終了する。
+func (a *CodexBriefingAdapter) StopDerivationBriefing(ctx context.Context, briefingSessionID, _ string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	session, found := a.sessions[briefingSessionID]
+	if !found {
+		return apperr.New(apperr.CodeDerivationBriefingStopNotActive)
+	}
+
+	if err := session.close(ctx); err != nil {
+		return apperr.Wrap(apperr.CodeDerivationBriefingStopFailed, err)
+	}
+	delete(a.sessions, briefingSessionID)
+
+	return nil
+}
+
 func (a *CodexBriefingAdapter) session(briefingSessionID string) (*codexACPSession, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -224,9 +242,12 @@ func (s *codexACPSession) close(ctx context.Context) error {
 	defer s.operationMu.Unlock()
 
 	_, requestErr := s.request(ctx, "session/close", map[string]any{"sessionId": s.sessionID})
+	if requestErr != nil {
+		return requestErr
+	}
 	s.terminate()
 
-	return requestErr
+	return nil
 }
 
 func (s *codexACPSession) request(ctx context.Context, method string, params any) (json.RawMessage, error) {

@@ -13,3 +13,7 @@ export function SendDerivationBriefMessage(arg1, arg2, arg3) {
 export function StartDerivationBriefing(arg1, arg2) {
   return window['go']['wails']['DerivationBriefingsHandler']['StartDerivationBriefing'](arg1, arg2);
 }
+
+export function StopDerivationBriefing(arg1, arg2) {
+  return window['go']['wails']['DerivationBriefingsHandler']['StopDerivationBriefing'](arg1, arg2);
+}
