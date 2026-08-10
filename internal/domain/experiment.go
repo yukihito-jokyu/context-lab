@@ -173,6 +173,16 @@ type ExperimentConclusion struct {
 	EvaluationSnapshotDigest string
 }
 
+// ExperimentDerivationSource は派生実験作成前に確認する安全な正本。
+type ExperimentDerivationSource struct {
+	ExperimentID     string
+	Purpose          string
+	FixedConditions  *ExperimentFixedConditions
+	Conclusion       *ExperimentConclusion
+	CanCreateDerived bool
+	ReasonCode       string
+}
+
 // ExperimentComparison は同一実験内の評価結果を比較表示する安全な正本。
 type ExperimentComparison struct {
 	Experiment      ExperimentComparisonExperiment
