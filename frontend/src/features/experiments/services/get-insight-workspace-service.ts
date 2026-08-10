@@ -20,6 +20,8 @@ export type InsightSummary = {
   id: string;
   statement: string;
   evidenceCount: number;
+  applicabilityConditions: string;
+  verificationGaps: string;
   createdAt: string;
 };
 
@@ -63,6 +65,8 @@ export const getInsightWorkspace: GetInsightWorkspaceService = async () => {
         id: insight.id,
         statement: insight.statement,
         evidenceCount: insight.evidenceCount,
+        applicabilityConditions: insight.applicabilityConditions,
+        verificationGaps: insight.verificationGaps,
         createdAt: String(insight.createdAt),
       })),
       lastConfirmedAt: response.data.lastConfirmedAt

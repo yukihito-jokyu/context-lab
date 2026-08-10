@@ -11,6 +11,7 @@ import { InsightWorkspacePage } from "@/features/experiments/InsightWorkspacePag
 import { RunEvaluationPage } from "@/features/experiments/RunEvaluationPage";
 import { createDerivedExperiment } from "@/features/experiments/services/create-derived-experiment-service";
 import { createExperimentFromBrief } from "@/features/experiments/services/create-experiment-from-brief-service";
+import { createInsight } from "@/features/experiments/services/create-insight-service";
 import { finalizeExperimentConclusion } from "@/features/experiments/services/finalize-experiment-conclusion-service";
 import { fixExperimentConditions } from "@/features/experiments/services/fix-experiment-conditions-service";
 import { getDerivationBriefing } from "@/features/experiments/services/get-derivation-briefing-service";
@@ -127,6 +128,7 @@ export default function App() {
   if (insightWorkspaceMatch) {
     return (
       <InsightWorkspacePage
+        createInsight={createInsight}
         getInsightWorkspace={getInsightWorkspace}
         initialExperimentId={decodeExperimentID(insightWorkspaceMatch[1])}
       />

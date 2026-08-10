@@ -51,6 +51,10 @@ type FinalizeExperimentConclusionResponse = Record<string, unknown> & {
   result?: Record<string, unknown>;
 };
 type GetInsightWorkspaceResponse = Record<string, unknown>;
+type CreateInsightResponse = Record<string, unknown> & {
+  delayMs?: number;
+  result?: Record<string, unknown>;
+};
 type ListPreparationsResponse = Record<string, unknown>;
 
 declare global {
@@ -113,6 +117,13 @@ declare global {
       requestId: string;
       experimentId: string;
       conclusion: string;
+    }>;
+    __createInsightRequests: Array<{
+      requestId: string;
+      evidences: Array<{ experimentId: string; conclusionId: string }>;
+      statement: string;
+      applicabilityConditions: string;
+      verificationGaps: string;
     }>;
   }
 }
@@ -396,6 +407,32 @@ async function installInsightWorkspaceMock(
         GetInsightWorkspace: () => {
           const response = responses[Math.min(callCount, responses.length - 1)];
           callCount += 1;
+          return Promise.resolve(response);
+        },
+      };
+    `,
+  });
+}
+
+async function installCreateInsightMock(
+  page: Page,
+  responses: CreateInsightResponse[],
+) {
+  await page.addInitScript({
+    content: `
+      const responses = ${JSON.stringify(responses)};
+      let callCount = 0;
+      window.go = window.go || { wails: {} };
+      window.__createInsightRequests = [];
+      window.go.wails.InsightsHandler = {
+        ...(window.go.wails.InsightsHandler || {}),
+        CreateInsight: (request) => {
+          window.__createInsightRequests.push(request);
+          const response = responses[Math.min(callCount, responses.length - 1)];
+          callCount += 1;
+          if (response.delayMs) {
+            return new Promise((resolve) => window.setTimeout(() => resolve(response.result), response.delayMs));
+          }
           return Promise.resolve(response);
         },
       };
@@ -2971,6 +3008,88 @@ test("環境準備sessionの空状態を表示する", async ({ page }) => {
 
   await expect(page.locator("#preparation-list-empty")).toBeVisible();
   await expect(page.getByRole("button", { name: "再読込" })).toBeVisible();
+});
+
+test("知見を根拠2件で記録し、失敗後に同じrequest IDで再試行する", async ({
+  page,
+}) => {
+  const workspace = {
+    data: {
+      evidenceCandidates: [
+        {
+          experimentId: "EXP-27-A",
+          purpose: "条件Aの比較",
+          evaluationAxes: "正確性",
+          conclusionId: "CON-27-A",
+          conclusion: "条件Aは検証可能性を高める。",
+          finalizedAt: confirmedAt,
+        },
+        {
+          experimentId: "EXP-27-B",
+          purpose: "条件Bの比較",
+          evaluationAxes: "再現性",
+          conclusionId: "CON-27-B",
+          conclusion: "条件Bには追加検証が必要。",
+          finalizedAt: confirmedAt,
+        },
+      ],
+      savedConsiderations: [],
+      insights: [],
+      lastConfirmedAt: confirmedAt,
+    },
+  };
+  await installInsightWorkspaceMock(page, [workspace]);
+  await installCreateInsightMock(page, [
+    {
+      error: {
+        code: "INSIGHT_CREATE_UNAVAILABLE",
+        message: "一時的に記録できません。",
+      },
+    },
+    {
+      data: {
+        requestId: "ignored-by-ui",
+        insightId: "INS-27",
+        evidences: [
+          { experimentId: "EXP-27-A", conclusionId: "CON-27-A" },
+          { experimentId: "EXP-27-B", conclusionId: "CON-27-B" },
+        ],
+        statement: "条件を明示すると検証可能性が高まる。",
+        applicabilityConditions: "同一環境で比較する。",
+        verificationGaps: "異なる環境で再検証する。",
+        createdAt: confirmedAt,
+      },
+    },
+  ]);
+  await page.goto("/experiments/EXP-27-A/insights");
+  await page
+    .getByRole("group", { name: "根拠を選択" })
+    .getByRole("checkbox")
+    .nth(1)
+    .check();
+  await page
+    .locator("#insight-statement")
+    .fill("条件を明示すると検証可能性が高まる。");
+  await page
+    .locator("#insight-applicability-conditions")
+    .fill("同一環境で比較する。");
+  await page
+    .locator("#insight-verification-gaps")
+    .fill("異なる環境で再検証する。");
+  await page.locator("#open-create-insight-dialog-button").click();
+  const dialog = page.locator("#create-insight-dialog");
+  await dialog.getByRole("button", { name: "知見を記録" }).click();
+  await expect(dialog.getByRole("alert")).toContainText(
+    "一時的に記録できません。",
+  );
+  await dialog.getByRole("button", { name: "知見を記録" }).click();
+  await expect(page.locator("#insight-list-title")).toContainText("既存知見");
+  await expect(page.getByText("INS-27")).toBeVisible();
+  const requestIds = await page.evaluate(() =>
+    window.__createInsightRequests.map((request) => request.requestId),
+  );
+  expect(requestIds).toHaveLength(2);
+  expect(requestIds[0]).toBe(requestIds[1]);
 });
 
 test("環境準備session一覧の失敗から再読込する", async ({ page }) => {

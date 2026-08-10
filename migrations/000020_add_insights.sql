@@ -1,0 +1,3 @@
+CREATE TABLE IF NOT EXISTS insights (id TEXT PRIMARY KEY, statement TEXT NOT NULL, applicability_conditions TEXT NOT NULL, verification_gaps TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS insight_evidences (insight_id TEXT NOT NULL, experiment_id TEXT NOT NULL, conclusion_id TEXT NOT NULL, sequence_no INTEGER NOT NULL, PRIMARY KEY (insight_id, experiment_id), FOREIGN KEY (insight_id) REFERENCES insights(id), FOREIGN KEY (experiment_id) REFERENCES experiments(id), FOREIGN KEY (conclusion_id) REFERENCES experiment_conclusions(id));
+CREATE TABLE IF NOT EXISTS insight_create_operations (request_id TEXT PRIMARY KEY, request_fingerprint TEXT NOT NULL, insight_id TEXT NOT NULL, FOREIGN KEY (insight_id) REFERENCES insights(id));

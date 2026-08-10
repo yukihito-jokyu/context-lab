@@ -207,6 +207,148 @@ export namespace wails {
 		    return a;
 		}
 	}
+	export class CreateInsightEvidenceData {
+	    experimentId: string;
+	    conclusionId: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CreateInsightEvidenceData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.experimentId = source["experimentId"];
+	        this.conclusionId = source["conclusionId"];
+	    }
+	}
+	export class CreateInsightData {
+	    requestId: string;
+	    insightId: string;
+	    evidences: CreateInsightEvidenceData[];
+	    statement: string;
+	    applicabilityConditions: string;
+	    verificationGaps: string;
+	    // Go type: time
+	    createdAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new CreateInsightData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.requestId = source["requestId"];
+	        this.insightId = source["insightId"];
+	        this.evidences = this.convertValues(source["evidences"], CreateInsightEvidenceData);
+	        this.statement = source["statement"];
+	        this.applicabilityConditions = source["applicabilityConditions"];
+	        this.verificationGaps = source["verificationGaps"];
+	        this.createdAt = this.convertValues(source["createdAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	export class CreateInsightEvidenceRequest {
+	    experimentId: string;
+	    conclusionId: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CreateInsightEvidenceRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.experimentId = source["experimentId"];
+	        this.conclusionId = source["conclusionId"];
+	    }
+	}
+	export class CreateInsightRequest {
+	    requestId: string;
+	    evidences: CreateInsightEvidenceRequest[];
+	    statement: string;
+	    applicabilityConditions: string;
+	    verificationGaps: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CreateInsightRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.requestId = source["requestId"];
+	        this.evidences = this.convertValues(source["evidences"], CreateInsightEvidenceRequest);
+	        this.statement = source["statement"];
+	        this.applicabilityConditions = source["applicabilityConditions"];
+	        this.verificationGaps = source["verificationGaps"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class CreateInsightResponse {
+	    data?: CreateInsightData;
+	    error?: ErrorResponse;
+	
+	    static createFrom(source: any = {}) {
+	        return new CreateInsightResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.data = this.convertValues(source["data"], CreateInsightData);
+	        this.error = this.convertValues(source["error"], ErrorResponse);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class DerivationBriefingMessageResponse {
 	    role: string;
 	    content: string;
@@ -1645,6 +1787,8 @@ export namespace wails {
 	export class InsightSummaryData {
 	    id: string;
 	    statement: string;
+	    applicabilityConditions: string;
+	    verificationGaps: string;
 	    evidenceCount: number;
 	    // Go type: time
 	    createdAt: any;
@@ -1657,6 +1801,8 @@ export namespace wails {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.statement = source["statement"];
+	        this.applicabilityConditions = source["applicabilityConditions"];
+	        this.verificationGaps = source["verificationGaps"];
 	        this.evidenceCount = source["evidenceCount"];
 	        this.createdAt = this.convertValues(source["createdAt"], null);
 	    }

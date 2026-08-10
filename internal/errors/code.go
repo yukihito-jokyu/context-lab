@@ -90,6 +90,11 @@ const (
 	CodeExperimentConclusionAlreadyFinalized     Code = "EXPERIMENT_CONCLUSION_ALREADY_FINALIZED"
 	CodeExperimentConclusionUnavailable          Code = "EXPERIMENT_CONCLUSION_UNAVAILABLE"
 	CodeInsightWorkspaceUnavailable              Code = "INSIGHT_WORKSPACE_UNAVAILABLE"
+	CodeInsightCreateInvalid                     Code = "INSIGHT_CREATE_INVALID"
+	CodeInsightCreateEvidenceInsufficient        Code = "INSIGHT_CREATE_EVIDENCE_INSUFFICIENT"
+	CodeInsightCreateEvidenceNotFound            Code = "INSIGHT_CREATE_EVIDENCE_NOT_FOUND"
+	CodeInsightCreateRequestConflict             Code = "INSIGHT_CREATE_REQUEST_CONFLICT"
+	CodeInsightCreateUnavailable                 Code = "INSIGHT_CREATE_UNAVAILABLE"
 	CodeOperationTimeout                         Code = "OPERATION_TIMEOUT"
 	CodeOperationCanceled                        Code = "OPERATION_CANCELED"
 	CodeUnexpected                               Code = "UNEXPECTED"
@@ -174,6 +179,11 @@ var defaultMessages = map[Code]message{
 	CodeExperimentConclusionAlreadyFinalized:     "この実験の結論はすでに確定しています",
 	CodeExperimentConclusionUnavailable:          "実験の結論を確定できませんでした",
 	CodeInsightWorkspaceUnavailable:              "知見ワークスペースを取得できませんでした",
+	CodeInsightCreateInvalid:                     "知見作成要求が不正です",
+	CodeInsightCreateEvidenceInsufficient:        "知見には異なる実験の根拠が二件以上必要です",
+	CodeInsightCreateEvidenceNotFound:            "確定済みの根拠が見つかりません",
+	CodeInsightCreateRequestConflict:             "この作成要求は別の知見に使用されています",
+	CodeInsightCreateUnavailable:                 "知見を記録できませんでした",
 	CodeOperationTimeout:                         "実験一覧の取得がタイムアウトしました",
 	CodeOperationCanceled:                        "実験一覧の取得を中止しました",
 	CodeUnexpected:                               "予期しないエラーが発生しました",

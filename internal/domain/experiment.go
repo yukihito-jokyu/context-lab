@@ -324,10 +324,29 @@ type InsightSavedConsideration struct {
 
 // InsightSummary は保存済み知見の安全な要約。
 type InsightSummary struct {
-	ID            string
-	Statement     string
-	EvidenceCount int
-	CreatedAt     time.Time
+	ID                      string
+	Statement               string
+	ApplicabilityConditions string
+	VerificationGaps        string
+	EvidenceCount           int
+	CreatedAt               time.Time
+}
+
+// InsightEvidence は知見へ固定する確定済み結論の根拠。
+type InsightEvidence struct {
+	ExperimentID string
+	ConclusionID string
+}
+
+// Insight は保存済み知見の不変結果。
+type Insight struct {
+	RequestID               string
+	InsightID               string
+	Evidences               []InsightEvidence
+	Statement               string
+	ApplicabilityConditions string
+	VerificationGaps        string
+	CreatedAt               time.Time
 }
 
 // ExperimentRunDetail はrun詳細画面が再表示する安全な観測結果。

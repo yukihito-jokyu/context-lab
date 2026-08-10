@@ -80,6 +80,82 @@ func TestInsightsHandlerFailureFallback(t *testing.T) {
 	}
 }
 
+// CreateInsight handlerのDTO変換と失敗契約を検証する。
+func TestInsightsHandlerCreateInsight(t *testing.T) {
+	tests := []struct {
+		name     string
+		command  *usecase.CreateInsight
+		wantCode apperr.Code
+	}{
+		{
+			name:    "成功",
+			command: usecase.NewCreateInsight(insightCreateHandlerStub{}),
+		},
+		{
+			name:     "障害",
+			command:  usecase.NewCreateInsight(insightCreateHandlerStub{err: errors.New("sqlite")}),
+			wantCode: apperr.CodeInsightCreateUnavailable,
+		},
+		{
+			name:     "依存欠落",
+			wantCode: apperr.CodeInsightCreateUnavailable,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NewInsightsHandlerWithCreate(nil, tt.command, newTestLogger()).CreateInsight(CreateInsightRequest{
+				RequestID: "request",
+				Evidences: []CreateInsightEvidenceRequest{
+					{
+						ExperimentID: "experiment-a",
+						ConclusionID: "conclusion-a",
+					},
+					{
+						ExperimentID: "experiment-b",
+						ConclusionID: "conclusion-b",
+					},
+				},
+				Statement:               "statement",
+				ApplicabilityConditions: "conditions",
+				VerificationGaps:        "gaps",
+			})
+			if tt.wantCode != "" {
+				if got.Error == nil || got.Error.Code != string(tt.wantCode) {
+					t.Errorf("Error = %+v, want code %q", got.Error, tt.wantCode)
+				}
+				return
+			}
+			if got.Data == nil || len(got.Data.Evidences) != 2 || got.Data.Evidences[0].ExperimentID != "experiment-a" {
+				t.Errorf("Data = %+v, want safe insight DTO", got.Data)
+			}
+		})
+	}
+}
+
+// CreateInsight handlerの未知エラー変換を検証する。
+func TestInsightsHandlerCreateInsightFallback(t *testing.T) {
+	got := NewInsightsHandlerWithCreate(nil, nil, newTestLogger()).failCreate(context.Background(), errors.New("private"))
+	if got.Error == nil || got.Error.Code != string(apperr.CodeUnexpected) {
+		t.Errorf("Error = %+v, want unexpected", got.Error)
+	}
+}
+
+// insightCreateHandlerStub は知見作成handler用のtest double。
+type insightCreateHandlerStub struct{ err error }
+
+// CreateInsight は固定の知見結果を返す。
+func (s insightCreateHandlerStub) CreateInsight(_ context.Context, requestID string, evidences []domain.InsightEvidence, statement, conditions, gaps string) (domain.Insight, bool, error) {
+	return domain.Insight{
+		RequestID:               requestID,
+		InsightID:               "insight",
+		Evidences:               evidences,
+		Statement:               statement,
+		ApplicabilityConditions: conditions,
+		VerificationGaps:        gaps,
+		CreatedAt:               time.Now(),
+	}, true, s.err
+}
+
 // insightHandlerReader は知見handler用のtest double。
 type insightHandlerReader struct {
 	workspace domain.InsightWorkspace
