@@ -69,6 +69,7 @@ func main() {
 		usecase.NewStartDerivationBriefing(store, briefingAdapter),
 		usecase.NewSendDerivationBriefMessage(store, briefingAdapter),
 		usecase.NewGetDerivationBriefing(store),
+		usecase.NewStopDerivationBriefing(store, briefingAdapter),
 		appLogger,
 	)
 	experimentBriefingsHandler := wailshandler.NewExperimentBriefingsHandler(

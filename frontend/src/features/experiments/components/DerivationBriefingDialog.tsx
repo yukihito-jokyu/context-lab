@@ -15,6 +15,7 @@ import type {
 } from "../services/get-derivation-briefing-service";
 import type { SendDerivationBriefMessageService } from "../services/send-derivation-brief-message-service";
 import type { StartDerivationBriefingService } from "../services/start-derivation-briefing-service";
+import type { StopDerivationBriefingService } from "../services/stop-derivation-briefing-service";
 
 type BriefingStart = {
   briefingSessionId: string;
@@ -29,6 +30,7 @@ export function DerivationBriefingDialog({
   startDerivationBriefing,
   sendDerivationBriefMessage,
   getDerivationBriefing,
+  stopDerivationBriefing,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -36,6 +38,7 @@ export function DerivationBriefingDialog({
   startDerivationBriefing: StartDerivationBriefingService;
   sendDerivationBriefMessage: SendDerivationBriefMessageService;
   getDerivationBriefing: GetDerivationBriefingService;
+  stopDerivationBriefing: StopDerivationBriefingService;
 }) {
   const [isStarting, setIsStarting] = useState(false);
   const [start, setStart] = useState<BriefingStart>();
@@ -52,6 +55,12 @@ export function DerivationBriefingDialog({
   const [briefing, setBriefing] = useState<DerivationBriefing>();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<{
+    code: string;
+    message: string;
+  }>();
+  const [isStopConfirmationOpen, setIsStopConfirmationOpen] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
+  const [stopError, setStopError] = useState<{
     code: string;
     message: string;
   }>();
@@ -180,6 +189,46 @@ export function DerivationBriefingDialog({
     }
   };
 
+  const requestClose = () => {
+    if (!start) {
+      onOpenChange(false);
+      return;
+    }
+    setStopError(undefined);
+    setIsStopConfirmationOpen(true);
+  };
+
+  const stop = async () => {
+    if (!start || isStopping) return;
+
+    setIsStopping(true);
+    setStopError(undefined);
+    try {
+      const response = await stopDerivationBriefing(
+        crypto.randomUUID(),
+        start.briefingSessionId,
+      );
+      if (response.data) {
+        setIsStopConfirmationOpen(false);
+        onOpenChange(false);
+        return;
+      }
+      setStopError(
+        response.error ?? {
+          code: "UNKNOWN",
+          message: "壁打ちを終了できませんでした。",
+        },
+      );
+    } catch {
+      setStopError({
+        code: "UNKNOWN",
+        message: "壁打ちを終了できませんでした。",
+      });
+    } finally {
+      setIsStopping(false);
+    }
+  };
+
   useEffect(() => {
     if (!open) {
       startedForOpenRef.current = false;
@@ -197,6 +246,9 @@ export function DerivationBriefingDialog({
       setIsRefreshing(false);
       isRefreshingRef.current = false;
       setRefreshError(undefined);
+      setIsStopConfirmationOpen(false);
+      setIsStopping(false);
+      setStopError(undefined);
       refreshGenerationRef.current += 1;
       return;
     }
@@ -206,13 +258,17 @@ export function DerivationBriefingDialog({
     void begin();
   }, [begin, open]);
 
-  const isCloseBlocked = isStarting || isSending;
+  const isCloseBlocked = isStarting || isSending || isStopping;
 
   return (
     <Dialog
       onOpenChange={(nextOpen) => {
-        if (!nextOpen && isCloseBlocked) return;
-        onOpenChange(nextOpen);
+        if (!nextOpen) {
+          if (isCloseBlocked) return;
+          requestClose();
+          return;
+        }
+        onOpenChange(true);
       }}
       open={open}
     >
@@ -345,7 +401,7 @@ export function DerivationBriefingDialog({
                 }
                 aria-invalid={isMessageInvalid}
                 className="min-h-24 w-full rounded-md border bg-background p-3 text-sm"
-                disabled={isSending}
+                disabled={isSending || isStopping}
                 id="derivation-briefing-message-input"
                 onChange={(event) => {
                   setMessage(event.target.value);
@@ -383,13 +439,64 @@ export function DerivationBriefingDialog({
                 </p>
               )}
               <Button
-                disabled={isSending}
+                disabled={isSending || isStopping}
                 id="send-derivation-briefing-message-button"
                 type="submit"
               >
                 送信
               </Button>
             </form>
+            {isStopConfirmationOpen && (
+              <Alert id="derivation-briefing-stop-confirmation" role="alert">
+                <AlertCircle />
+                <AlertTitle>壁打ちを終了しますか？</AlertTitle>
+                <AlertDescription className="space-y-4">
+                  <p>終了後は、この壁打ちにメッセージを送信できません。</p>
+                  {isStopping && (
+                    <p id="derivation-briefing-stop-pending" role="status">
+                      壁打ちを終了しています…
+                    </p>
+                  )}
+                  {stopError && (
+                    <p id="derivation-briefing-stop-error" role="alert">
+                      {stopError.message}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button
+                      disabled={isStopping}
+                      onClick={() => setIsStopConfirmationOpen(false)}
+                      type="button"
+                      variant="outline"
+                    >
+                      続ける
+                    </Button>
+                    <Button
+                      disabled={isStopping}
+                      id="stop-derivation-briefing-button"
+                      onClick={() => void stop()}
+                      type="button"
+                      variant="destructive"
+                    >
+                      壁打ちを終了
+                    </Button>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+            {!isStopConfirmationOpen && (
+              <div className="flex justify-end">
+                <Button
+                  disabled={isCloseBlocked}
+                  id="request-stop-derivation-briefing-button"
+                  onClick={requestClose}
+                  type="button"
+                  variant="outline"
+                >
+                  壁打ちを終了
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </DialogContent>

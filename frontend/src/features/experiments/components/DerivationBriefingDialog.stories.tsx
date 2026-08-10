@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, fn, userEvent, within } from "storybook/test";
 import { DerivationBriefingDialog } from "./DerivationBriefingDialog";
 
 const meta = {
@@ -52,6 +53,9 @@ const meta = {
           createdAt: "2026-08-10T09:00:02Z",
         },
       },
+    }),
+    stopDerivationBriefing: async () => ({
+      data: { operationId: "derivation-stop-operation-22" },
     }),
   },
 } satisfies Meta<typeof DerivationBriefingDialog>;
@@ -115,5 +119,58 @@ export const Empty: Story = {
         lastConfirmedAt: "2026-08-10T09:00:00Z",
       },
     }),
+  },
+};
+
+export const StopPending: Story = {
+  args: {
+    stopDerivationBriefing: () => new Promise<never>(() => undefined),
+  },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body);
+    const dialog = await body.findByRole("dialog", {
+      name: "派生実験の壁打ちを開始",
+    });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "壁打ちを終了" }),
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "壁打ちを終了" }),
+    );
+    await expect(
+      within(dialog).getByText("壁打ちを終了しています…"),
+    ).toBeVisible();
+    await expect(
+      within(dialog).getByRole("button", { name: "送信" }),
+    ).toBeDisabled();
+  },
+};
+
+export const StopFailure: Story = {
+  args: {
+    stopDerivationBriefing: fn(async () => ({
+      error: {
+        code: "DERIVATION_BRIEFING_STOP_UNAVAILABLE",
+        message: "壁打ちを終了できませんでした。",
+      },
+    })),
+  },
+  play: async ({ args, canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body);
+    const dialog = await body.findByRole("dialog", {
+      name: "派生実験の壁打ちを開始",
+    });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "壁打ちを終了" }),
+    );
+    const stopButton = within(dialog).getByRole("button", {
+      name: "壁打ちを終了",
+    });
+    await userEvent.click(stopButton);
+    await expect(
+      within(dialog).getByText("壁打ちを終了できませんでした。"),
+    ).toBeVisible();
+    await userEvent.click(stopButton);
+    await expect(args.stopDerivationBriefing).toHaveBeenCalledTimes(2);
   },
 };

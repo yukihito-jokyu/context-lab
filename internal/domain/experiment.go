@@ -7,6 +7,7 @@ import (
 
 const (
 	BriefingStartStateStarting = "starting"
+	BriefingStartStateStopping = "stopping"
 	BriefingStartStateStarted  = "started"
 	BriefingStartStateFailed   = "failed"
 	BriefingStartStateStopped  = "stopped"
@@ -33,6 +34,15 @@ type DerivationBriefingStart struct {
 
 // DerivationBriefingMessageOperation は派生実験ブリーフ会話送信の永続的な結果。
 type DerivationBriefingMessageOperation struct {
+	RequestID         string
+	BriefingSessionID string
+	OperationID       string
+	State             string
+	FailureCode       string
+}
+
+// DerivationBriefingStopOperation は派生実験ブリーフ終了の永続的な結果。
+type DerivationBriefingStopOperation struct {
 	RequestID         string
 	BriefingSessionID string
 	OperationID       string

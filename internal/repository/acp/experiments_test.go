@@ -20,6 +20,7 @@ func TestCodexACPFixtureProcess(t *testing.T) {
 	}
 
 	mode := os.Getenv("ACP_FIXTURE_MODE")
+	closeCalls := 0
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		var request rpcEnvelope
@@ -55,6 +56,15 @@ func TestCodexACPFixtureProcess(t *testing.T) {
 				JSONRPC: "2.0",
 				ID:      request.ID,
 				Error:   &rpcError{Message: "close failed"},
+			})
+			continue
+		}
+		if mode == "close-error-once" && request.Method == "session/close" && closeCalls == 0 {
+			closeCalls++
+			writeFixtureRPC(rpcEnvelope{
+				JSONRPC: "2.0",
+				ID:      request.ID,
+				Error:   &rpcError{Message: "close failed once"},
 			})
 			continue
 		}
@@ -552,6 +562,22 @@ func TestCodexBriefingAdapterSendDerivationBriefMessage(t *testing.T) {
 			}
 		})
 	}
+}
+
+// 派生壁打ち停止のACP close失敗後に同じsessionを再試行できることを確認。
+func TestCodexBriefingAdapterStopDerivationBriefingRetriesAfterCloseFailure(t *testing.T) {
+	t.Setenv("GO_WANT_ACP_FIXTURE", "1")
+	t.Setenv("ACP_FIXTURE_MODE", "close-error-once")
+	adapter := newFixtureAdapter(t)
+	ctx := context.Background()
+	if err := adapter.StartExperimentBriefing(ctx, "derivation-session", "operation-1"); err != nil {
+		t.Fatalf("StartExperimentBriefing() error = %v", err)
+	}
+	assertAppErrorCode(t, adapter.StopDerivationBriefing(ctx, "derivation-session", "operation-2"), apperr.CodeDerivationBriefingStopFailed)
+	if err := adapter.StopDerivationBriefing(ctx, "derivation-session", "operation-3"); err != nil {
+		t.Fatalf("retry StopDerivationBriefing() error = %v", err)
+	}
+	assertAppErrorCode(t, adapter.StopDerivationBriefing(ctx, "derivation-session", "operation-4"), apperr.CodeDerivationBriefingStopNotActive)
 }
 
 func pointer(value string) *string {

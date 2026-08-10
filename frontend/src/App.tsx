@@ -29,6 +29,7 @@ import { startDerivationBriefing } from "@/features/experiments/services/start-d
 import { startExperimentBriefing } from "@/features/experiments/services/start-experiment-briefing-service";
 import { startExperiment } from "@/features/experiments/services/start-experiment-service";
 import { startRunEvaluation } from "@/features/experiments/services/start-run-evaluation-service";
+import { stopDerivationBriefing } from "@/features/experiments/services/stop-derivation-briefing-service";
 import { stopExperimentBriefing } from "@/features/experiments/services/stop-experiment-briefing-service";
 
 function decodeExperimentID(value: string) {
@@ -110,6 +111,7 @@ export default function App() {
           startDerivationBriefing,
           sendDerivationBriefMessage,
           getDerivationBriefing,
+          stopDerivationBriefing,
         }}
         experimentId={decodeExperimentID(derivationSourceMatch[1])}
         getDerivationSource={getDerivationSource}

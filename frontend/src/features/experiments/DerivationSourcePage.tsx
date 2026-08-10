@@ -20,11 +20,13 @@ import type {
 } from "./services/get-derivation-source-service";
 import type { SendDerivationBriefMessageService } from "./services/send-derivation-brief-message-service";
 import type { StartDerivationBriefingService } from "./services/start-derivation-briefing-service";
+import type { StopDerivationBriefingService } from "./services/stop-derivation-briefing-service";
 
 type DerivationBriefingServices = {
   startDerivationBriefing: StartDerivationBriefingService;
   sendDerivationBriefMessage: SendDerivationBriefMessageService;
   getDerivationBriefing: GetDerivationBriefingService;
+  stopDerivationBriefing: StopDerivationBriefingService;
 };
 
 function DerivationSourceContent({
@@ -109,6 +111,7 @@ function DerivationSourceContent({
             briefingServices.sendDerivationBriefMessage
           }
           getDerivationBriefing={briefingServices.getDerivationBriefing}
+          stopDerivationBriefing={briefingServices.stopDerivationBriefing}
         />
       )}
 
