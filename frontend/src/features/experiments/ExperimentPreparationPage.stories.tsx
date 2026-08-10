@@ -45,6 +45,7 @@ export const Default: Story = {
   args: {
     getExperimentPreparation: async () => ({ data: preparation }),
     saveExperimentPreparationDraft: fn(async () => ({})),
+    fixExperimentConditions: fn(async () => ({})),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -58,6 +59,7 @@ export const Loading: Story = {
   args: {
     getExperimentPreparation: () => new Promise(() => {}),
     saveExperimentPreparationDraft: fn(async () => ({})),
+    fixExperimentConditions: fn(async () => ({})),
   },
   play: async ({ canvasElement }) => {
     await expect(
@@ -70,6 +72,7 @@ export const Empty: Story = {
   args: {
     getExperimentPreparation: async () => ({}),
     saveExperimentPreparationDraft: fn(async () => ({})),
+    fixExperimentConditions: fn(async () => ({})),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -88,6 +91,7 @@ export const LoadError: Story = {
       },
     }),
     saveExperimentPreparationDraft: fn(async () => ({})),
+    fixExperimentConditions: fn(async () => ({})),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -106,6 +110,7 @@ export const NotFound: Story = {
       },
     }),
     saveExperimentPreparationDraft: fn(async () => ({})),
+    fixExperimentConditions: fn(async () => ({})),
   },
 };
 
@@ -119,6 +124,7 @@ export const SaveSuccess: Story = {
         savedAt: confirmedAt,
       },
     })),
+    fixExperimentConditions: fn(async () => ({})),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -133,12 +139,55 @@ export const SaveError: Story = {
     saveExperimentPreparationDraft: fn(async () => ({
       error: { code: "DRAFT_SAVE_FAILED", message: "保存できませんでした。" },
     })),
+    fixExperimentConditions: fn(async () => ({})),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.getByRole("button", { name: "下書きを保存" }).click();
     await expect(
       await canvas.findByText("下書きを保存できません"),
+    ).toBeVisible();
+  },
+};
+
+export const FixSuccess: Story = {
+  args: {
+    getExperimentPreparation: async () => ({ data: preparation }),
+    saveExperimentPreparationDraft: fn(async () => ({})),
+    fixExperimentConditions: fn(async () => ({
+      data: {
+        experimentId: preparation.experimentId,
+        state: "ready",
+        fixedConditionId: "fixed-conditions-1",
+        operationId: "operation-1",
+        fixedAt: confirmedAt,
+      },
+    })),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.getByRole("button", { name: "条件を固定" }).click();
+    await expect(await canvas.findByText(/条件を固定しました:/)).toBeVisible();
+  },
+};
+
+export const FixValidationError: Story = {
+  args: {
+    getExperimentPreparation: async () => ({ data: preparation }),
+    saveExperimentPreparationDraft: fn(async () => ({})),
+    fixExperimentConditions: fn(async () => ({
+      error: {
+        code: "CONDITIONS_INVALID",
+        message: "固定に必要な入力を確認してください。",
+        fieldErrors: { purpose: "実験目的を入力してください。" },
+      },
+    })),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.getByRole("button", { name: "条件を固定" }).click();
+    await expect(
+      await canvas.findByText("実験目的を入力してください。"),
     ).toBeVisible();
   },
 };
