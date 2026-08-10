@@ -183,6 +183,25 @@ type ExperimentDerivationSource struct {
 	ReasonCode       string
 }
 
+// DerivedExperiment は派生作成の不変結果。
+type DerivedExperiment struct {
+	RequestID          string
+	ExperimentID       string
+	SourceExperimentID string
+	State              string
+	CreatedAt          time.Time
+}
+
+// DerivedExperimentChanges は派生元固定条件へ適用する差分。
+type DerivedExperimentChanges struct {
+	Purpose               *string
+	Hypothesis            *string
+	EnvironmentConditions *string
+	InitialInput          *string
+	Prompts               *[]ExperimentPreparationPrompt
+	EvaluationAxes        *string
+}
+
 // ExperimentComparison は同一実験内の評価結果を比較表示する安全な正本。
 type ExperimentComparison struct {
 	Experiment      ExperimentComparisonExperiment

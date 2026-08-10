@@ -1,18 +1,119 @@
-export namespace wails {
+export namespace domain {
 	
-	export class CreateExperimentFromBriefData {
-	    experimentId: string;
-	    state: string;
+	export class ExperimentPreparationPrompt {
+	    SequenceNo: number;
+	    Content: string;
 	
 	    static createFrom(source: any = {}) {
-	        return new CreateExperimentFromBriefData(source);
+	        return new ExperimentPreparationPrompt(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.experimentId = source["experimentId"];
-	        this.state = source["state"];
+	        this.SequenceNo = source["SequenceNo"];
+	        this.Content = source["Content"];
 	    }
+	}
+	export class DerivedExperimentChanges {
+	    Purpose?: string;
+	    Hypothesis?: string;
+	    EnvironmentConditions?: string;
+	    InitialInput?: string;
+	    Prompts?: ExperimentPreparationPrompt[];
+	    EvaluationAxes?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DerivedExperimentChanges(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Purpose = source["Purpose"];
+	        this.Hypothesis = source["Hypothesis"];
+	        this.EnvironmentConditions = source["EnvironmentConditions"];
+	        this.InitialInput = source["InitialInput"];
+	        this.Prompts = this.convertValues(source["Prompts"], ExperimentPreparationPrompt);
+	        this.EvaluationAxes = source["EvaluationAxes"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
+export namespace wails {
+	
+	export class CreateDerivedExperimentData {
+	    requestId: string;
+	    experimentId: string;
+	    sourceExperimentId: string;
+	    state: string;
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CreateDerivedExperimentData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.requestId = source["requestId"];
+	        this.experimentId = source["experimentId"];
+	        this.sourceExperimentId = source["sourceExperimentId"];
+	        this.state = source["state"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
+	export class CreateDerivedExperimentRequest {
+	    requestId: string;
+	    sourceExperimentId: string;
+	    changes: domain.DerivedExperimentChanges;
+	    reason: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CreateDerivedExperimentRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.requestId = source["requestId"];
+	        this.sourceExperimentId = source["sourceExperimentId"];
+	        this.changes = this.convertValues(source["changes"], domain.DerivedExperimentChanges);
+	        this.reason = source["reason"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class ErrorResponse {
 	    code: string;
@@ -26,6 +127,52 @@ export namespace wails {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.code = source["code"];
 	        this.message = source["message"];
+	    }
+	}
+	export class CreateDerivedExperimentResponse {
+	    data?: CreateDerivedExperimentData;
+	    error?: ErrorResponse;
+	
+	    static createFrom(source: any = {}) {
+	        return new CreateDerivedExperimentResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.data = this.convertValues(source["data"], CreateDerivedExperimentData);
+	        this.error = this.convertValues(source["error"], ErrorResponse);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class CreateExperimentFromBriefData {
+	    experimentId: string;
+	    state: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CreateExperimentFromBriefData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.experimentId = source["experimentId"];
+	        this.state = source["state"];
 	    }
 	}
 	export class CreateExperimentFromBriefResponse {
