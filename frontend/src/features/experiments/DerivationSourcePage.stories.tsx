@@ -42,6 +42,16 @@ const briefingServices = {
   sendDerivationBriefMessage: async () => ({
     data: { operationId: "derivation-message-operation-20" },
   }),
+  getDerivationBriefing: async () => ({
+    data: {
+      state: "started",
+      messages: [],
+      lastConfirmedAt: "2026-08-10T10:00:00Z",
+    },
+  }),
+  stopDerivationBriefing: async () => ({
+    data: { operationId: "derivation-stop-operation-20" },
+  }),
 };
 
 const meta = {
