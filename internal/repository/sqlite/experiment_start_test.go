@@ -39,6 +39,7 @@ func TestStoreBeginExperiment(t *testing.T) {
 		if run.ID == "" || run.State != domain.ExperimentRunStateQueued {
 			t.Errorf("run = %+v, want queued persisted run", run)
 		}
+		assertExperimentRunArtifactState(t, store, run.ID, domain.ExperimentRunArtifactStatusNotRecorded, "")
 	}
 	if err := store.MarkExperimentRunRunning(context.Background(), start.Runs[0].ID); err != nil {
 		t.Fatalf("MarkExperimentRunRunning() error = %v", err)
@@ -49,6 +50,8 @@ func TestStoreBeginExperiment(t *testing.T) {
 	if err := store.FailExperimentRun(context.Background(), start.Runs[1].ID, string(apperr.CodeExperimentStartFailed)); err != nil {
 		t.Fatalf("FailExperimentRun() error = %v", err)
 	}
+	assertExperimentRunArtifactState(t, store, start.Runs[0].ID, domain.ExperimentRunArtifactStatusComplete, "")
+	assertExperimentRunArtifactState(t, store, start.Runs[1].ID, domain.ExperimentRunArtifactStatusPartial, string(apperr.CodeExperimentStartFailed))
 
 	replayed, created, err := store.BeginExperiment(context.Background(), "start-request", fixed.ExperimentID)
 	if err != nil {
@@ -59,6 +62,23 @@ func TestStoreBeginExperiment(t *testing.T) {
 	}
 	if _, _, err := store.BeginExperiment(context.Background(), "start-request", "another-experiment"); !apperr.IsCode(err, apperr.CodeExperimentStartRequestInvalid) {
 		t.Errorf("different experiment BeginExperiment() error = %v, want code %q", err, apperr.CodeExperimentStartRequestInvalid)
+	}
+}
+
+// run artifact状態の永続値検証。
+func assertExperimentRunArtifactState(t *testing.T, store *Store, runID, wantStatus, wantReason string) {
+	t.Helper()
+
+	var status string
+	var reason sql.NullString
+	if err := store.db.QueryRow("SELECT artifact_status, artifact_reason_code FROM experiment_runs WHERE id = ?", runID).Scan(&status, &reason); err != nil {
+		t.Fatalf("artifact state query error = %v", err)
+	}
+	if status != wantStatus {
+		t.Errorf("artifact status = %q, want %q", status, wantStatus)
+	}
+	if gotReason := reason.String; gotReason != wantReason {
+		t.Errorf("artifact reason = %q, want %q", gotReason, wantReason)
 	}
 }
 
@@ -165,6 +185,24 @@ func TestStoreExperimentRunStateUpdates(t *testing.T) {
 	}
 	if err := store.FailExperimentRun(context.Background(), start.Runs[0].ID, string(apperr.CodeOperationTimeout)); err != nil {
 		t.Errorf("FailExperimentRun() error = %v", err)
+	}
+	if _, err := store.db.Exec("CREATE TRIGGER fail_complete_run BEFORE UPDATE ON experiment_runs WHEN NEW.state = 'completed' BEGIN SELECT RAISE(ABORT, 'complete run failed'); END"); err != nil {
+		t.Fatalf("create complete trigger error = %v", err)
+	}
+	if err := store.CompleteExperimentRun(context.Background(), start.Runs[1].ID, "安全な要約"); err == nil {
+		t.Error("CompleteExperimentRun() error = nil, want run update failure")
+	}
+	if _, err := store.db.Exec("DROP TRIGGER fail_complete_run"); err != nil {
+		t.Fatalf("drop complete trigger error = %v", err)
+	}
+	if _, err := store.db.Exec("CREATE TRIGGER fail_run_failure_insert BEFORE INSERT ON experiment_run_failures BEGIN SELECT RAISE(ABORT, 'failure record failed'); END"); err != nil {
+		t.Fatalf("create failure insert trigger error = %v", err)
+	}
+	if err := store.FailExperimentRun(context.Background(), start.Runs[1].ID, string(apperr.CodeOperationTimeout)); err == nil {
+		t.Error("FailExperimentRun() error = nil, want failure record error")
+	}
+	if _, err := store.db.Exec("DROP TRIGGER fail_run_failure_insert"); err != nil {
+		t.Fatalf("drop failure insert trigger error = %v", err)
 	}
 	if _, err := store.db.Exec("CREATE TRIGGER fail_start_operation_update BEFORE UPDATE ON experiment_start_operations BEGIN SELECT RAISE(ABORT, 'operation update failed'); END"); err != nil {
 		t.Fatalf("create trigger error = %v", err)

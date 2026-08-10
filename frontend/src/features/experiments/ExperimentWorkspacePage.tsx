@@ -404,12 +404,25 @@ export function ExperimentWorkspacePage({
                 emptyTitle="runはまだありません"
                 items={workspace.runs}
                 renderItemAction={(run) => (
-                  <RunEvaluationStartPanel
-                    onStarted={onRunEvaluationStarted}
-                    runId={run.id}
-                    runState={run.state}
-                    startRunEvaluation={startRunEvaluation}
-                  />
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                      onClick={() =>
+                        window.location.assign(
+                          `/experiments/${encodeURIComponent(experimentId)}/runs/${encodeURIComponent(run.id)}`,
+                        )
+                      }
+                      type="button"
+                      variant="outline"
+                    >
+                      詳細を確認
+                    </Button>
+                    <RunEvaluationStartPanel
+                      onStarted={onRunEvaluationStarted}
+                      runId={run.id}
+                      runState={run.state}
+                      startRunEvaluation={startRunEvaluation}
+                    />
+                  </div>
                 )}
                 title="実行"
               />

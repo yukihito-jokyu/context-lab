@@ -18,6 +18,7 @@ type StartRunEvaluationResponse = Record<string, unknown> & {
   delayMs?: number;
   result?: Record<string, unknown>;
 };
+type GetRunDetailResponse = Record<string, unknown>;
 type ListPreparationsResponse = Record<string, unknown>;
 
 declare global {
@@ -244,6 +245,26 @@ async function installExperimentWorkspaceMock(
               window.setTimeout(() => resolve(response.result), response.delayMs);
             });
           }
+          return Promise.resolve(response);
+        },
+      };
+    `,
+  });
+}
+
+async function installRunDetailMock(
+  page: Page,
+  responses: GetRunDetailResponse[],
+) {
+  await page.addInitScript({
+    content: `
+      const runDetailResponses = ${JSON.stringify(responses)};
+      let runDetailCallCount = 0;
+      window.go = window.go || { wails: {} };
+      window.go.wails.ExperimentRunDetailsHandler = {
+        GetRunDetail: () => {
+          const response = runDetailResponses[Math.min(runDetailCallCount, runDetailResponses.length - 1)];
+          runDetailCallCount += 1;
           return Promise.resolve(response);
         },
       };
@@ -1363,6 +1384,137 @@ test("完了したrunから評価を開始し、評価到達画面へ遷移す�
   await expect(page.locator("#evaluation-operation-page")).toContainText(
     "操作ID: evaluation-operation-20",
   );
+});
+
+test("run詳細は観測、差分、照合中と部分取得を表示する", async ({ page }) => {
+  await installRunDetailMock(page, [
+    {
+      data: {
+        run: {
+          id: "run-22",
+          experimentId: "EXP-022",
+          state: "running",
+          updatedAt: confirmedAt,
+        },
+        fixedPrompt: { sequenceNo: 1, content: "根拠を添えて要約する" },
+        operation: {
+          id: "operation-22",
+          state: "running",
+          updatedAt: confirmedAt,
+        },
+        observations: [
+          {
+            sequenceNo: 1,
+            kind: "output",
+            occurredAt: confirmedAt,
+            summary: "利用可能な観測結果",
+          },
+        ],
+        artifacts: {
+          status: "partial",
+          items: [],
+          reasonCode: "ARTIFACT_PENDING",
+        },
+        reconciliation: { state: "reconciling", lastObservedAt: confirmedAt },
+        lastConfirmedAt: confirmedAt,
+      },
+    },
+  ]);
+  await page.goto("/experiments/EXP-022/runs/run-22");
+
+  await expect(page.locator("#run-detail-progress")).toContainText(
+    "照合しています",
+  );
+  await expect(page.locator("#run-detail-observation")).toContainText(
+    "利用可能な観測結果",
+  );
+  await expect(page.getByRole("heading", { name: "差分" })).toBeVisible();
+  await expect(page.locator("#run-detail-artifacts")).toContainText(
+    "partial（ARTIFACT_PENDING）",
+  );
+  await expect(
+    page.getByText("runの完了後に評価を開始できます。"),
+  ).toBeVisible();
+});
+
+test("run詳細は失敗理由を表示し、失敗後に再読込できる", async ({ page }) => {
+  await installRunDetailMock(page, [
+    {
+      data: {
+        run: {
+          id: "run-23",
+          experimentId: "EXP-023",
+          state: "failed",
+          updatedAt: confirmedAt,
+        },
+        fixedPrompt: { sequenceNo: 1, content: "prompt" },
+        operation: {
+          id: "operation-23",
+          state: "failed",
+          updatedAt: confirmedAt,
+        },
+        observations: [],
+        artifacts: {
+          status: "partial",
+          items: [],
+          reasonCode: "RUN_EXECUTION_FAILED",
+        },
+        failure: {
+          code: "RUN_EXECUTION_FAILED",
+          occurredAt: confirmedAt,
+          partialSummary: "安全に表示できる失敗の要約です。",
+        },
+        reconciliation: { state: "settled", lastObservedAt: confirmedAt },
+        lastConfirmedAt: confirmedAt,
+      },
+    },
+  ]);
+  await page.goto("/experiments/EXP-023/runs/run-23");
+  await expect(page.locator("#run-detail-failure")).toContainText(
+    "RUN_EXECUTION_FAILED",
+  );
+
+  await installRunDetailMock(page, [
+    {
+      error: {
+        code: "RUN_DETAIL_UNAVAILABLE",
+        message: "一時的に取得できません。",
+      },
+    },
+    {
+      data: {
+        run: {
+          id: "run-24",
+          experimentId: "EXP-024",
+          state: "completed",
+          updatedAt: confirmedAt,
+        },
+        fixedPrompt: { sequenceNo: 1, content: "prompt" },
+        operation: {
+          id: "operation-24",
+          state: "completed",
+          updatedAt: confirmedAt,
+        },
+        observations: [
+          {
+            sequenceNo: 1,
+            kind: "output",
+            occurredAt: confirmedAt,
+            summary: "再読込後の観測",
+          },
+        ],
+        artifacts: { status: "complete", items: [] },
+        reconciliation: { state: "settled", lastObservedAt: confirmedAt },
+        lastConfirmedAt: confirmedAt,
+      },
+    },
+  ]);
+  await page.goto("/experiments/EXP-024/runs/run-24");
+  await expect(page.locator("#run-detail-error")).toContainText(
+    "一時的に取得できません。",
+  );
+  await page.locator("#reload-run-detail-button").click();
+  await expect(page.getByText("再読込後の観測")).toBeVisible();
 });
 
 test("評価開始失敗は同じrequest IDで再試行し、開始中は二重送信しない", async ({

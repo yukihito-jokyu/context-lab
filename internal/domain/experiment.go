@@ -150,6 +150,70 @@ type ExperimentWorkspaceRun struct {
 	UpdatedAt time.Time
 }
 
+// ExperimentRunDetail はrun詳細画面が再表示する安全な観測結果。
+type ExperimentRunDetail struct {
+	Run             ExperimentRunFact
+	FixedPrompt     ExperimentPreparationPrompt
+	Operation       ExperimentRunOperation
+	Observations    []ExperimentRunObservation
+	Artifacts       ExperimentRunArtifacts
+	Failure         *ExperimentRunFailure
+	Reconciliation  ExperimentRunReconciliation
+	LastConfirmedAt time.Time
+}
+
+// ExperimentRunFact はrunの安全な実行事実。
+type ExperimentRunFact struct {
+	ID           string
+	ExperimentID string
+	State        string
+	Summary      *string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// ExperimentRunOperation はrunを開始した操作の安全な状態。
+type ExperimentRunOperation struct {
+	ID        string
+	State     string
+	UpdatedAt time.Time
+}
+
+// ExperimentRunObservation は時系列観測の安全な要約。
+type ExperimentRunObservation struct {
+	SequenceNo int
+	Kind       string
+	OccurredAt time.Time
+	Summary    string
+}
+
+// ExperimentRunArtifact は比較可能なartifact差分の安全な識別子。
+type ExperimentRunArtifact struct {
+	Digest string
+	Label  *string
+	Status string
+}
+
+// ExperimentRunArtifacts はartifact取得の完全性。
+type ExperimentRunArtifacts struct {
+	Status     string
+	Items      []ExperimentRunArtifact
+	ReasonCode string
+}
+
+// ExperimentRunFailure はrun固有の安全な失敗情報。
+type ExperimentRunFailure struct {
+	Code           string
+	OccurredAt     time.Time
+	PartialSummary *string
+}
+
+// ExperimentRunReconciliation は保存済み観測との照合状態。
+type ExperimentRunReconciliation struct {
+	State          string
+	LastObservedAt time.Time
+}
+
 // ExperimentStart は実験開始commandの永続的な結果。
 type ExperimentStart struct {
 	RequestID       string
@@ -173,16 +237,19 @@ type ExperimentRunRequest struct {
 }
 
 const (
-	ExperimentStartStateStarting       = "starting"
-	ExperimentStartStateRunning        = "running"
-	ExperimentStartStateFailed         = "failed"
-	ExperimentRunStateQueued           = "queued"
-	ExperimentRunStateRunning          = "running"
-	ExperimentRunStateCompleted        = "completed"
-	ExperimentRunStateFailed           = "failed"
-	ExperimentEvaluationStateStarting  = "starting"
-	ExperimentEvaluationStateCompleted = "completed"
-	ExperimentEvaluationStateFailed    = "failed"
+	ExperimentStartStateStarting           = "starting"
+	ExperimentStartStateRunning            = "running"
+	ExperimentStartStateFailed             = "failed"
+	ExperimentRunStateQueued               = "queued"
+	ExperimentRunStateRunning              = "running"
+	ExperimentRunStateCompleted            = "completed"
+	ExperimentRunStateFailed               = "failed"
+	ExperimentEvaluationStateStarting      = "starting"
+	ExperimentEvaluationStateCompleted     = "completed"
+	ExperimentEvaluationStateFailed        = "failed"
+	ExperimentRunArtifactStatusComplete    = "complete"
+	ExperimentRunArtifactStatusPartial     = "partial"
+	ExperimentRunArtifactStatusNotRecorded = "notRecorded"
 )
 
 // ExperimentWorkspaceEvaluation は実験ワークスペースに表示するevaluationの安全な進行状況。

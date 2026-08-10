@@ -119,7 +119,7 @@ func (s *Store) beginExperiment(ctx context.Context, requestID, experimentID str
 			return domain.ExperimentStart{}, false, fmt.Errorf("generate experiment run ID: %w", err)
 		}
 		run := domain.ExperimentWorkspaceRun{ID: runID, State: domain.ExperimentRunStateQueued, UpdatedAt: now}
-		if _, err := tx.ExecContext(ctx, "INSERT INTO experiment_runs (id, experiment_id, state, prompt_sequence_no, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", run.ID, experimentID, run.State, index+1, nowValue, nowValue); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO experiment_runs (id, experiment_id, operation_id, state, prompt_sequence_no, isolation_kind, last_observed_at, reconciliation_state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", run.ID, experimentID, start.OperationID, run.State, index+1, "docker", nowValue, "reconciling", nowValue, nowValue); err != nil {
 			return domain.ExperimentStart{}, false, fmt.Errorf("insert experiment run: %w", err)
 		}
 		start.Runs = append(start.Runs, run)
@@ -148,13 +148,20 @@ func (s *Store) MarkExperimentRunRunning(ctx context.Context, runID string) erro
 
 // CompleteExperimentRun は一件のrunの安全な要約を記録する。
 func (s *Store) CompleteExperimentRun(ctx context.Context, runID, summary string) error {
-	return s.updateExperimentRun(ctx, runID, domain.ExperimentRunStateCompleted, &summary)
+	if _, err := s.db.ExecContext(ctx, "UPDATE experiment_runs SET state = ?, summary = ?, artifact_status = ?, artifact_reason_code = NULL, updated_at = ? WHERE id = ?", domain.ExperimentRunStateCompleted, summary, domain.ExperimentRunArtifactStatusComplete, time.Now().UTC().Format(time.RFC3339Nano), runID); err != nil {
+		return fmt.Errorf("complete experiment run: %w", err)
+	}
+
+	return nil
 }
 
 // FailExperimentRun は一件のrunner失敗と開始操作失敗を記録する。
 func (s *Store) FailExperimentRun(ctx context.Context, runID, failureCode string) error {
-	if err := s.updateExperimentRun(ctx, runID, domain.ExperimentRunStateFailed, nil); err != nil {
-		return err
+	if _, err := s.db.ExecContext(ctx, "UPDATE experiment_runs SET state = ?, failure_code = ?, artifact_status = ?, artifact_reason_code = ?, updated_at = ? WHERE id = ?", domain.ExperimentRunStateFailed, nullableFailureCode(failureCode), domain.ExperimentRunArtifactStatusPartial, nullableFailureCode(failureCode), time.Now().UTC().Format(time.RFC3339Nano), runID); err != nil {
+		return fmt.Errorf("fail experiment run: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, "INSERT INTO experiment_run_failures (run_id, code, occurred_at) VALUES (?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET code = excluded.code, occurred_at = excluded.occurred_at", runID, failureCode, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		return fmt.Errorf("record experiment run failure: %w", err)
 	}
 	if _, err := s.db.ExecContext(ctx, "UPDATE experiment_start_operations SET state = ?, failure_code = ?, updated_at = ? WHERE experiment_id = (SELECT experiment_id FROM experiment_runs WHERE id = ?)", domain.ExperimentStartStateFailed, failureCode, time.Now().UTC().Format(time.RFC3339Nano), runID); err != nil {
 		return fmt.Errorf("fail experiment start operation: %w", err)
