@@ -25,6 +25,7 @@ type RetryEndedRunResponse = Record<string, unknown> & {
   result?: Record<string, unknown>;
 };
 type GetExperimentComparisonResponse = Record<string, unknown>;
+type GetDerivationSourceResponse = Record<string, unknown>;
 type FinalizeExperimentConclusionResponse = Record<string, unknown> & {
   delayMs?: number;
   result?: Record<string, unknown>;
@@ -338,6 +339,15 @@ async function installComparisonMock(
 ) {
   await page.addInitScript({
     content: `const r=${JSON.stringify(responses)};let i=0;window.go=window.go||{wails:{}};window.go.wails.ExperimentComparisonsHandler={GetExperimentComparison:()=>Promise.resolve(r[Math.min(i++,r.length-1)])};`,
+  });
+}
+
+async function installDerivationSourceMock(
+  page: Page,
+  responses: GetDerivationSourceResponse[],
+) {
+  await page.addInitScript({
+    content: `const r=${JSON.stringify(responses)};let i=0;window.go=window.go||{wails:{}};window.go.wails.ExperimentDerivationSourcesHandler={GetDerivationSource:()=>Promise.resolve(r[Math.min(i++,r.length-1)])};`,
   });
 }
 
@@ -1681,6 +1691,100 @@ test("比較結果から結論を確定し、失敗再試行と永続済み結�
   await page.locator("#reload-finalized-experiment-conclusion-button").click();
   await expect(page.locator("#experiment-conclusion-finalized")).toContainText(
     "永続済みの結論",
+  );
+});
+
+test("派生の作成元は固定条件・結論・可否を表示し、失敗後に再読込する", async ({
+  page,
+}) => {
+  const eligible = {
+    source: {
+      experimentId: "EXP-20",
+      purpose: "派生の比較",
+      fixedConditions: {
+        fixedConditionId: "condition-20",
+        purpose: "派生の比較",
+        hypothesis: "条件Aが有効",
+        environmentConditions: "Node.js 22",
+        initialInput: "入力データ",
+        prompts: [{ sequenceNo: 1, content: "条件Aで実行" }],
+        evaluationAxes: "正確性",
+        fixedAt: confirmedAt,
+      },
+      conclusion: {
+        id: "conclusion-20",
+        content: "条件Aを採用します。",
+        state: "finalized",
+        finalizedAt: confirmedAt,
+      },
+    },
+    eligibility: { canCreateDerivedExperiment: true },
+  };
+  const ineligible = {
+    source: {
+      experimentId: "EXP-20",
+      purpose: "派生の比較",
+    },
+    eligibility: {
+      canCreateDerivedExperiment: false,
+      reasonCode: "CONDITIONS_NOT_FIXED",
+    },
+  };
+  await installDerivationSourceMock(page, [
+    { data: eligible },
+    { data: eligible },
+  ]);
+  await page.goto("/experiments/EXP-20/derivations");
+  await expect(
+    page.locator("#derivation-source-fixed-conditions"),
+  ).toContainText("Node.js 22");
+  await expect(page.locator("#derivation-source-conclusion")).toContainText(
+    "条件Aを採用します。",
+  );
+  await expect(
+    page.getByRole("button", { name: "派生実験を作成" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "壁打ちを開始" }),
+  ).toBeDisabled();
+  await expect(page.locator("#derivation-source-eligibility")).toContainText(
+    "次の機能で利用可能になります",
+  );
+
+  await installDerivationSourceMock(page, [{ data: ineligible }]);
+  await page.goto("/experiments/EXP-20/derivations");
+  await expect(page.locator("#derivation-source-eligibility")).toContainText(
+    "CONDITIONS_NOT_FIXED",
+  );
+  await expect(
+    page.getByRole("button", { name: "派生実験を作成" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "壁打ちを開始" }),
+  ).toBeDisabled();
+
+  await installDerivationSourceMock(page, [
+    {
+      error: {
+        code: "EXPERIMENT_DERIVATION_SOURCE_UNAVAILABLE",
+        message: "取得失敗",
+      },
+    },
+    {
+      error: {
+        code: "EXPERIMENT_DERIVATION_SOURCE_UNAVAILABLE",
+        message: "取得失敗",
+      },
+    },
+    { data: eligible },
+  ]);
+  await page.goto("/experiments/EXP-20/derivations");
+  await expect(page.locator("#derivation-source-error")).toContainText(
+    "取得失敗",
+  );
+  await page.locator("#reload-derivation-source-button").click();
+  await expect(page.locator("#derivation-source-conclusion")).toContainText(
+    "条件Aを採用します。",
   );
 });
 
