@@ -31,6 +31,21 @@ type DerivationBriefingStart struct {
 	FailureCode        string
 }
 
+// DerivationBriefingMessageOperation は派生実験ブリーフ会話送信の永続的な結果。
+type DerivationBriefingMessageOperation struct {
+	RequestID         string
+	BriefingSessionID string
+	OperationID       string
+	State             string
+	FailureCode       string
+}
+
+// DerivationBriefingMessageResult はACPから受け取る安全な会話と派生提案。
+type DerivationBriefingMessageResult struct {
+	AssistantMessage string
+	Suggestion       *ExperimentBrief
+}
+
 // ExperimentBriefingMessageOperation は実験ブリーフ会話送信の永続的な結果。
 type ExperimentBriefingMessageOperation struct {
 	RequestID         string

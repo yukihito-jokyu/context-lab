@@ -65,7 +65,11 @@ func main() {
 	experimentRunDetailsHandler := wailshandler.NewExperimentRunDetailsHandler(usecase.NewGetRunDetail(store), appLogger)
 	preparationsHandler := wailshandler.NewPreparationsHandler(usecase.NewListPreparations(store), appLogger)
 	briefingAdapter := acp.NewCodexBriefingAdapter(filepath.Join(configDirectory, applicationDirectoryName))
-	derivationBriefingsHandler := wailshandler.NewDerivationBriefingsHandler(usecase.NewStartDerivationBriefing(store, briefingAdapter), appLogger)
+	derivationBriefingsHandler := wailshandler.NewDerivationBriefingsHandler(
+		usecase.NewStartDerivationBriefing(store, briefingAdapter),
+		appLogger,
+		usecase.NewSendDerivationBriefMessage(store, briefingAdapter),
+	)
 	experimentBriefingsHandler := wailshandler.NewExperimentBriefingsHandler(
 		usecase.NewStartExperimentBriefing(store, briefingAdapter),
 		usecase.NewSendExperimentBriefMessage(store, briefingAdapter),

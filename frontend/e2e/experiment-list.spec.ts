@@ -30,6 +30,10 @@ type StartDerivationBriefingResponse = Record<string, unknown> & {
   delayMs?: number;
   result?: Record<string, unknown>;
 };
+type SendDerivationBriefMessageResponse = Record<string, unknown> & {
+  delayMs?: number;
+  result?: Record<string, unknown>;
+};
 type CreateDerivedExperimentResponse = Record<string, unknown> & {
   delayMs?: number;
   result?: Record<string, unknown>;
@@ -67,6 +71,11 @@ declare global {
     __derivationBriefingRequests: Array<{
       requestId: string;
       sourceExperimentId: string;
+    }>;
+    __derivationBriefingMessageRequests: Array<{
+      requestId: string;
+      briefingSessionId: string;
+      message: string;
     }>;
     __draftSaveRequests: Array<{
       requestId: string;
@@ -399,18 +408,33 @@ async function installCreateDerivedExperimentMock(
 async function installDerivationBriefingMock(
   page: Page,
   responses: StartDerivationBriefingResponse[],
+  messageResponses: SendDerivationBriefMessageResponse[] = [],
 ) {
   await page.addInitScript({
     content: `
       const responses = ${JSON.stringify(responses)};
+      const messageResponses = ${JSON.stringify(messageResponses)};
       let callCount = 0;
+      let messageCallCount = 0;
       window.go = window.go || { wails: {} };
       window.__derivationBriefingRequests = [];
+      window.__derivationBriefingMessageRequests = [];
       window.go.wails.DerivationBriefingsHandler = {
         StartDerivationBriefing: (requestId, sourceExperimentId) => {
           window.__derivationBriefingRequests.push({ requestId, sourceExperimentId });
           const response = responses[Math.min(callCount, responses.length - 1)];
           callCount += 1;
+          if (response.delayMs) {
+            return new Promise((resolve) => {
+              window.setTimeout(() => resolve(response.result), response.delayMs);
+            });
+          }
+          return Promise.resolve(response);
+        },
+        SendDerivationBriefMessage: (requestId, briefingSessionId, message) => {
+          window.__derivationBriefingMessageRequests.push({ requestId, briefingSessionId, message });
+          const response = messageResponses[Math.min(messageCallCount, messageResponses.length - 1)];
+          messageCallCount += 1;
           if (response.delayMs) {
             return new Promise((resolve) => {
               window.setTimeout(() => resolve(response.result), response.delayMs);
@@ -1920,6 +1944,100 @@ test("派生元から壁打ちを開始し、失敗後は新しい依頼IDで再
   expect(requests[0].sourceExperimentId).toBe("EXP-22");
   expect(requests[1].sourceExperimentId).toBe("EXP-22");
   expect(requests[0].requestId).not.toBe(requests[1].requestId);
+});
+
+test("派生実験の壁打ちメッセージを送信し、入力検証・送信中・失敗再試行を扱う", async ({
+  page,
+}) => {
+  await installDerivationSourceMock(page, [
+    {
+      data: {
+        source: {
+          experimentId: "EXP-23",
+          purpose: "派生の比較",
+          fixedConditions: {
+            fixedConditionId: "condition-23",
+            purpose: "派生の比較",
+            environmentConditions: "Node.js 22",
+            initialInput: "入力データ",
+            prompts: [{ sequenceNo: 1, content: "条件Aで実行" }],
+            evaluationAxes: "正確性",
+            fixedAt: confirmedAt,
+          },
+          conclusion: {
+            id: "conclusion-23",
+            content: "条件Aを採用します。",
+            state: "finalized",
+            finalizedAt: confirmedAt,
+          },
+        },
+        eligibility: { canCreateDerivedExperiment: true },
+      },
+    },
+  ]);
+  await installDerivationBriefingMock(
+    page,
+    [
+      {
+        data: {
+          briefingSessionId: "derivation-briefing-23",
+          operationId: "derivation-operation-23",
+          sourceExperimentId: "EXP-23",
+        },
+      },
+    ],
+    [
+      {
+        error: {
+          code: "DERIVATION_BRIEFING_MESSAGE_UNAVAILABLE",
+          message: "壁打ちメッセージを送信できませんでした。",
+        },
+      },
+      {
+        delayMs: 200,
+        result: { data: { operationId: "derivation-message-operation-23" } },
+      },
+    ],
+  );
+
+  await page.goto("/experiments/EXP-23/derivations");
+  await page.locator("#start-derivation-briefing-button").click();
+  const messageInput = page.locator("#derivation-briefing-message-input");
+  await page.locator("#send-derivation-briefing-message-button").click();
+  await expect(
+    page.locator("#derivation-briefing-message-error"),
+  ).toContainText("壁打ちへ送る内容を入力してください。");
+
+  await messageInput.fill("比較条件を一つ増やしたいです。");
+  await page.locator("#send-derivation-briefing-message-button").click();
+  await expect(
+    page.locator("#derivation-briefing-message-command-error"),
+  ).toContainText("壁打ちメッセージを送信できませんでした。");
+  await expect(messageInput).toHaveValue("比較条件を一つ増やしたいです。");
+
+  await page.locator("#send-derivation-briefing-message-button").click();
+  await expect(
+    page.locator("#derivation-briefing-message-pending"),
+  ).toBeVisible();
+  await expect(messageInput).toBeDisabled();
+  await expect(
+    page.locator("#send-derivation-briefing-message-button"),
+  ).toBeDisabled();
+  await expect(messageInput).toHaveValue("比較条件を一つ増やしたいです。");
+  await expect(page.getByRole("button", { name: "閉じる" })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(messageInput).toHaveValue("");
+  await expect(page.locator("#derivation-briefing-message-sent")).toContainText(
+    "送信を受け付けました。操作ID: derivation-message-operation-23",
+  );
+  const requests = await page.evaluate(
+    () => window.__derivationBriefingMessageRequests,
+  );
+  expect(requests).toHaveLength(2);
+  expect(requests[0].briefingSessionId).toBe("derivation-briefing-23");
+  expect(requests[0].message).toBe("比較条件を一つ増やしたいです。");
+  expect(requests[1].requestId).not.toBe(requests[0].requestId);
 });
 
 test("派生実験は差分と理由を検証し、同じ依頼IDで再試行して準備へ遷移する", async ({

@@ -22,6 +22,7 @@ import { getRunDetail } from "@/features/experiments/services/get-run-detail-ser
 import { listExperiments } from "@/features/experiments/services/list-experiments-service";
 import { retryEndedRun } from "@/features/experiments/services/retry-ended-run-service";
 import { saveExperimentPreparationDraft } from "@/features/experiments/services/save-experiment-preparation-draft-service";
+import { sendDerivationBriefMessage } from "@/features/experiments/services/send-derivation-brief-message-service";
 import { sendExperimentBriefMessage } from "@/features/experiments/services/send-experiment-brief-message-service";
 import { startDerivationBriefing } from "@/features/experiments/services/start-derivation-briefing-service";
 import { startExperimentBriefing } from "@/features/experiments/services/start-experiment-briefing-service";
@@ -106,6 +107,7 @@ export default function App() {
       <DerivationSourcePage
         briefingServices={{
           startDerivationBriefing,
+          sendDerivationBriefMessage,
         }}
         experimentId={decodeExperimentID(derivationSourceMatch[1])}
         getDerivationSource={getDerivationSource}

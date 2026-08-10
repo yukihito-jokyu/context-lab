@@ -39,6 +39,9 @@ const briefingServices = {
       sourceExperimentId,
     },
   }),
+  sendDerivationBriefMessage: async () => ({
+    data: { operationId: "derivation-message-operation-20" },
+  }),
 };
 
 const meta = {

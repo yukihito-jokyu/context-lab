@@ -79,6 +79,22 @@ func (a *CodexBriefingAdapter) SendExperimentBriefMessage(ctx context.Context, b
 	return parseBriefingResponse(response), nil
 }
 
+// SendDerivationBriefMessage は利用者入力を派生実験のACP壁打ちへ送り、安全な会話と提案を返す。
+func (a *CodexBriefingAdapter) SendDerivationBriefMessage(ctx context.Context, briefingSessionID, _ string, message string) (domain.DerivationBriefingMessageResult, error) {
+	session, err := a.session(briefingSessionID)
+	if err != nil {
+		return domain.DerivationBriefingMessageResult{}, apperr.New(apperr.CodeDerivationBriefingMessageNotActive)
+	}
+
+	response, err := session.prompt(ctx, derivationBriefingPrompt(message))
+	if err != nil {
+		return domain.DerivationBriefingMessageResult{}, apperr.Wrap(apperr.CodeDerivationBriefingMessageFailed, err)
+	}
+	parsed := parseDerivationBriefingResponse(response)
+
+	return parsed, nil
+}
+
 // StopExperimentBriefing は実ACP sessionを閉じ、sidecarを終了する。
 func (a *CodexBriefingAdapter) StopExperimentBriefing(ctx context.Context, briefingSessionID, _ string) error {
 	a.mu.Lock()
@@ -336,6 +352,39 @@ func briefingPrompt(message string) string {
 		"\\n利用者入力:\\n" + message
 }
 
+// derivationBriefingPrompt は派生実験の安全な構造化提案を要求する。
+func derivationBriefingPrompt(message string) string {
+	return "あなたは確定済み実験から派生実験を検討する壁打ち助手です。ツール、ファイル、ネットワークを使わず、日本語で回答してください。資格情報、内部推論、プロセス情報を出力せず、回答はMarkdownや説明を付けない次のJSON objectだけにしてください。未確定の文字列は空文字、候補がなければ配列は空にします。\n" +
+		`{"assistantMessage":"利用者へ表示する短い応答","brief":{"purpose":"派生実験の目的","decision":"比較・判断したいこと","hypothesis":"仮説","candidatePrompts":["候補1","候補2"],"evaluationCriteria":"評価基準","environmentConditions":"環境条件","initialInput":"初期入力","successCriteria":"成功条件","requiredConditions":"必須条件","openQuestion":"未解決事項"}}` +
+		"\n利用者入力:\n" + message
+}
+
+// parseDerivationBriefingResponse は構造化JSONだけを安全な派生壁打ち結果へ変換する。
+func parseDerivationBriefingResponse(response string) domain.DerivationBriefingMessageResult {
+	const fallbackMessage = "提案を安全に解析できませんでした。もう一度お試しください。"
+
+	jsonResponse := extractJSONObject(response)
+	if jsonResponse == "" {
+		return domain.DerivationBriefingMessageResult{AssistantMessage: fallbackMessage}
+	}
+	var payload struct {
+		AssistantMessage string `json:"assistantMessage"`
+	}
+	if err := json.Unmarshal([]byte(jsonResponse), &payload); err != nil {
+		return domain.DerivationBriefingMessageResult{AssistantMessage: fallbackMessage}
+	}
+	parsed := parseBriefingResponse(jsonResponse)
+	assistantMessage := strings.TrimSpace(payload.AssistantMessage)
+	if assistantMessage == "" {
+		assistantMessage = fallbackMessage
+	}
+
+	return domain.DerivationBriefingMessageResult{
+		AssistantMessage: assistantMessage,
+		Suggestion:       parsed.Brief,
+	}
+}
+
 func parseBriefingResponse(response string) domain.ExperimentBriefingMessageResult {
 	result := domain.ExperimentBriefingMessageResult{AssistantMessage: strings.TrimSpace(response)}
 	jsonResponse := extractJSONObject(response)
@@ -426,6 +475,11 @@ type NotReadyBriefingMessageSender struct{}
 // SendExperimentBriefMessage はACP未準備エラーを返却。
 func (NotReadyBriefingMessageSender) SendExperimentBriefMessage(context.Context, string, string, string) (domain.ExperimentBriefingMessageResult, error) {
 	return domain.ExperimentBriefingMessageResult{}, apperr.New(apperr.CodeACPNotReady)
+}
+
+// SendDerivationBriefMessage はACP未準備エラーを返却。
+func (NotReadyBriefingMessageSender) SendDerivationBriefMessage(context.Context, string, string, string) (domain.DerivationBriefingMessageResult, error) {
+	return domain.DerivationBriefingMessageResult{}, apperr.New(apperr.CodeACPNotReady)
 }
 
 // NotReadyBriefingStopper はACP未準備エラーを返すテスト・代替adapter。
