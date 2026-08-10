@@ -108,6 +108,10 @@ func TestStoreGetExperimentComparisonDriver(t *testing.T) {
 			wantError: true,
 		},
 		{
+			stage:     comparisonConclusionTimeError,
+			wantError: true,
+		},
+		{
 			stage:     comparisonEvaluationsReadError,
 			wantError: true,
 		},
@@ -135,6 +139,10 @@ func TestStoreGetExperimentComparisonDriver(t *testing.T) {
 			stage:     comparisonNullableValues,
 			wantFound: true,
 		},
+		{
+			stage:     comparisonConclusionSuccess,
+			wantFound: true,
+		},
 	} {
 		t.Run(string(tt.stage), func(t *testing.T) {
 			comparison, found, err := newComparisonFailureStore(t, tt.stage).GetExperimentComparison(context.Background(), "experiment-1")
@@ -147,6 +155,14 @@ func TestStoreGetExperimentComparisonDriver(t *testing.T) {
 			if tt.stage == comparisonSuccess && (len(comparison.Evaluations) != 1 || comparison.Evaluations[0].RunSummary == nil || comparison.Evaluations[0].Result.Summary == nil || comparison.Evaluations[0].Reconciliation.LastObservedAt.IsZero()) {
 				t.Errorf("GetExperimentComparison() = %+v, want populated comparison", comparison)
 			}
+			if tt.stage == comparisonConclusionSuccess {
+				if comparison.Conclusion == nil {
+					t.Fatal("Conclusion = nil, want persisted conclusion")
+				}
+				if comparison.Conclusion.ConclusionID != "conclusion-1" || comparison.LastConfirmedAt.Format(time.RFC3339) != "2026-08-10T03:00:00Z" {
+					t.Errorf("comparison = %+v, want conclusion and finalized last confirmation", comparison)
+				}
+			}
 		})
 	}
 }
@@ -157,6 +173,7 @@ const (
 	comparisonExperimentMissing           comparisonFailureStage = "experiment-missing"
 	comparisonExperimentReadError         comparisonFailureStage = "experiment-read-error"
 	comparisonExperimentTimeError         comparisonFailureStage = "experiment-time-error"
+	comparisonConclusionTimeError         comparisonFailureStage = "conclusion-time-error"
 	comparisonEvaluationsReadError        comparisonFailureStage = "evaluations-read-error"
 	comparisonEvaluationScanError         comparisonFailureStage = "evaluation-scan-error"
 	comparisonEvaluationUpdatedTimeError  comparisonFailureStage = "evaluation-updated-time-error"
@@ -164,6 +181,7 @@ const (
 	comparisonEvaluationRowsError         comparisonFailureStage = "evaluation-rows-error"
 	comparisonSuccess                     comparisonFailureStage = "success"
 	comparisonNullableValues              comparisonFailureStage = "nullable-values"
+	comparisonConclusionSuccess           comparisonFailureStage = "conclusion-success"
 )
 
 const comparisonFailureDriverName = "context-lab-comparison-failure"
@@ -210,6 +228,22 @@ func (c *comparisonFailureConnection) QueryContext(_ context.Context, query stri
 		if c.stage == comparisonExperimentTimeError {
 			updatedAt = "invalid"
 		}
+		conclusionID := driver.Value(nil)
+		conclusion := driver.Value(nil)
+		conclusionState := driver.Value(nil)
+		conclusionFinalizedAt := driver.Value(nil)
+		if c.stage == comparisonConclusionTimeError {
+			conclusionID = "conclusion-1"
+			conclusion = "結論"
+			conclusionState = "finalized"
+			conclusionFinalizedAt = "invalid"
+		}
+		if c.stage == comparisonConclusionSuccess {
+			conclusionID = "conclusion-1"
+			conclusion = "結論"
+			conclusionState = "finalized"
+			conclusionFinalizedAt = "2026-08-10T03:00:00Z"
+		}
 		return &comparisonFailureRows{
 			columns: comparisonExperimentColumns(),
 			values: [][]driver.Value{
@@ -218,6 +252,10 @@ func (c *comparisonFailureConnection) QueryContext(_ context.Context, query stri
 					"目的",
 					"評価軸",
 					updatedAt,
+					conclusionID,
+					conclusion,
+					conclusionState,
+					conclusionFinalizedAt,
 				},
 			},
 		}, nil
@@ -293,6 +331,10 @@ func comparisonExperimentColumns() []string {
 		"purpose",
 		"evaluation_axes",
 		"updated_at",
+		"conclusion_id",
+		"conclusion",
+		"conclusion_state",
+		"conclusion_finalized_at",
 	}
 }
 
