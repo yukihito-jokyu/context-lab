@@ -55,6 +55,14 @@ const meta = {
         state: "running",
       },
     }),
+    startRunEvaluation: async () => ({
+      data: {
+        evaluationId: "evaluation-1",
+        operationId: "evaluation-operation-1",
+        runId: "run-1",
+        state: "evaluating",
+      },
+    }),
   },
 } satisfies Meta<typeof ExperimentWorkspacePage>;
 export default meta;
@@ -92,6 +100,7 @@ export const Starting: Story = {
   args: {
     getExperimentWorkspace: async () => ({ data: workspace }),
     startExperiment: () => new Promise(() => {}),
+    startRunEvaluation: () => new Promise(() => {}),
   },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
@@ -110,6 +119,12 @@ export const StartError: Story = {
       error: {
         code: "START_EXPERIMENT_FAILED",
         message: "開始に失敗しました。",
+      },
+    }),
+    startRunEvaluation: async () => ({
+      error: {
+        code: "RUN_EVALUATION_UNAVAILABLE",
+        message: "評価を開始できませんでした。",
       },
     }),
   },
