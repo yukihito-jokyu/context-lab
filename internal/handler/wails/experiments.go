@@ -203,10 +203,11 @@ type ExperimentConditionFixOperationData struct {
 
 // ExperimentWorkspaceRunData はrunの安全な進行状況。
 type ExperimentWorkspaceRunData struct {
-	ID        string    `json:"id"`
-	State     string    `json:"state"`
-	Summary   *string   `json:"summary,omitempty"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID           string    `json:"id"`
+	RetryOfRunID *string   `json:"retryOfRunId,omitempty"`
+	State        string    `json:"state"`
+	Summary      *string   `json:"summary,omitempty"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 // ExperimentWorkspaceEvaluationData はevaluationの安全な進行状況。
@@ -235,6 +236,28 @@ type StartExperimentData struct {
 	OperationID  string                       `json:"operationId"`
 	State        string                       `json:"state"`
 	Runs         []ExperimentWorkspaceRunData `json:"runs"`
+}
+
+// RetryEndedRunRequest は終了runを再実行用に作成するcommandの入力。
+type RetryEndedRunRequest struct {
+	RequestID string `json:"requestId"`
+	RunID     string `json:"runId"`
+}
+
+// RetryEndedRunResponse は終了run再実行用作成の成功または失敗結果。
+type RetryEndedRunResponse struct {
+	Data  *RetryEndedRunData `json:"data,omitempty"`
+	Error *ErrorResponse     `json:"error,omitempty"`
+}
+
+// RetryEndedRunData は再実行用に作成したqueued runの安全な情報。
+type RetryEndedRunData struct {
+	SourceRunID  string    `json:"sourceRunId"`
+	ExperimentID string    `json:"experimentId"`
+	RetryRunID   string    `json:"retryRunId"`
+	OperationID  string    `json:"operationId"`
+	State        string    `json:"state"`
+	CreatedAt    time.Time `json:"createdAt"`
 }
 
 // StartRunEvaluationRequest はrun評価開始commandの画面入力。
@@ -544,6 +567,56 @@ type ExperimentRunsHandler struct {
 	logger          logger.Logger
 }
 
+// ExperimentRunRetriesHandler は終了run再実行用作成commandのWails binding。
+type ExperimentRunRetriesHandler struct {
+	retryEndedRun *usecase.RetryEndedRun
+	logger        logger.Logger
+}
+
+// NewExperimentRunRetriesHandler は終了run再実行用作成bindingを生成する。
+func NewExperimentRunRetriesHandler(retryEndedRun *usecase.RetryEndedRun, appLogger logger.Logger) *ExperimentRunRetriesHandler {
+	return &ExperimentRunRetriesHandler{retryEndedRun: retryEndedRun, logger: appLogger}
+}
+
+// RetryEndedRun は失敗済みrunから再実行用queued runを作成する。
+func (h *ExperimentRunRetriesHandler) RetryEndedRun(request RetryEndedRunRequest) RetryEndedRunResponse {
+	ctx := context.Background()
+	h.logger.Info(ctx, "retry ended run called")
+	if h.retryEndedRun == nil {
+		response := failRetryEndedRun(apperr.New(apperr.CodeRunRetryUnavailable))
+		h.logger.ErrorCode(ctx, "retry ended run failed", response.Error.Code, slog.String("operation", "retry_ended_run"))
+
+		return response
+	}
+
+	retry, err := h.retryEndedRun.Execute(ctx, request.RequestID, request.RunID)
+	if err != nil {
+		response := failRetryEndedRun(err)
+		h.logger.ErrorCode(ctx, "retry ended run failed", response.Error.Code, slog.String("operation", "retry_ended_run"))
+
+		return response
+	}
+
+	return RetryEndedRunResponse{Data: &RetryEndedRunData{
+		SourceRunID:  retry.SourceRunID,
+		ExperimentID: retry.ExperimentID,
+		RetryRunID:   retry.RetryRunID,
+		OperationID:  retry.OperationID,
+		State:        retry.State,
+		CreatedAt:    retry.CreatedAt.UTC(),
+	}}
+}
+
+// failRetryEndedRun は内部エラーを安全なrun再実行用作成エラーへ変換する。
+func failRetryEndedRun(err error) RetryEndedRunResponse {
+	appErr := apperr.As(err)
+	if appErr == nil {
+		appErr = apperr.NewUnexpected(err)
+	}
+
+	return RetryEndedRunResponse{Error: &ErrorResponse{Code: string(appErr.Code), Message: appErr.Error()}}
+}
+
 // NewExperimentRunsHandler は実験開始bindingを生成。
 func NewExperimentRunsHandler(startExperiment *usecase.StartExperiment, appLogger logger.Logger) *ExperimentRunsHandler {
 	return &ExperimentRunsHandler{startExperiment: startExperiment, logger: appLogger}
@@ -646,7 +719,7 @@ func toGetExperimentWorkspaceData(workspace domain.ExperimentWorkspace) GetExper
 func toExperimentWorkspaceRunData(runs []domain.ExperimentWorkspaceRun) []ExperimentWorkspaceRunData {
 	data := make([]ExperimentWorkspaceRunData, 0, len(runs))
 	for _, run := range runs {
-		data = append(data, ExperimentWorkspaceRunData{ID: run.ID, State: run.State, Summary: run.Summary, UpdatedAt: run.UpdatedAt.UTC()})
+		data = append(data, ExperimentWorkspaceRunData{ID: run.ID, RetryOfRunID: run.RetryOfRunID, State: run.State, Summary: run.Summary, UpdatedAt: run.UpdatedAt.UTC()})
 	}
 
 	return data

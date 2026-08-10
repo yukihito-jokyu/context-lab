@@ -13,6 +13,7 @@ import { getExperimentPreparation } from "@/features/experiments/services/get-ex
 import { getExperimentWorkspace } from "@/features/experiments/services/get-experiment-workspace-service";
 import { getRunDetail } from "@/features/experiments/services/get-run-detail-service";
 import { listExperiments } from "@/features/experiments/services/list-experiments-service";
+import { retryEndedRun } from "@/features/experiments/services/retry-ended-run-service";
 import { saveExperimentPreparationDraft } from "@/features/experiments/services/save-experiment-preparation-draft-service";
 import { sendExperimentBriefMessage } from "@/features/experiments/services/send-experiment-brief-message-service";
 import { startExperimentBriefing } from "@/features/experiments/services/start-experiment-briefing-service";
@@ -96,6 +97,7 @@ export default function App() {
         getExperimentWorkspace={getExperimentWorkspace}
         startExperiment={startExperiment}
         startRunEvaluation={startRunEvaluation}
+        retryEndedRun={retryEndedRun}
       />
     );
   }

@@ -63,6 +63,16 @@ const meta = {
         state: "evaluating",
       },
     }),
+    retryEndedRun: async () => ({
+      data: {
+        sourceRunId: "run-1",
+        experimentId: "EXP-015",
+        retryRunId: "run-2",
+        operationId: "retry-operation-1",
+        state: "queued",
+        createdAt: "2026-08-10T10:25:00+09:00",
+      },
+    }),
   },
 } satisfies Meta<typeof ExperimentWorkspacePage>;
 export default meta;
@@ -125,6 +135,35 @@ export const StartError: Story = {
       error: {
         code: "RUN_EVALUATION_UNAVAILABLE",
         message: "評価を開始できませんでした。",
+      },
+    }),
+  },
+};
+
+export const RetryEndedRun: Story = {
+  args: {
+    getExperimentWorkspace: async () => ({
+      data: {
+        ...workspace,
+        state: "running",
+        runs: [
+          {
+            id: "run-failed-1",
+            state: "failed",
+            summary: "実行に失敗しました",
+            updatedAt: "2026-08-10T10:25:00+09:00",
+          },
+        ],
+      },
+    }),
+    retryEndedRun: async () => ({
+      data: {
+        sourceRunId: "run-failed-1",
+        experimentId: "EXP-015",
+        retryRunId: "run-retry-1",
+        operationId: "retry-operation-1",
+        state: "queued",
+        createdAt: "2026-08-10T10:25:00+09:00",
       },
     }),
   },

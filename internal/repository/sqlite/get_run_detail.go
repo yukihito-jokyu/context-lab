@@ -37,10 +37,11 @@ func (s *Store) findRunDetail(ctx context.Context, runID string) (domain.Experim
 	var createdAt string
 	var updatedAt string
 	err := s.db.QueryRowContext(ctx, `SELECT r.id, r.experiment_id, r.state, r.summary, r.created_at, r.updated_at,
-		COALESCE(r.operation_id, o.operation_id), o.state, o.updated_at, p.sequence_no, p.content, r.last_observed_at, r.reconciliation_state
+		COALESCE(r.operation_id, ro.operation_id, o.operation_id), COALESCE(ro.state, o.state), COALESCE(ro.updated_at, o.updated_at), p.sequence_no, p.content, r.last_observed_at, r.reconciliation_state
 		FROM experiment_runs r
 		LEFT JOIN experiment_start_operations o ON o.experiment_id = r.experiment_id
 			AND (r.operation_id IS NULL OR o.operation_id = r.operation_id)
+		LEFT JOIN experiment_run_retry_operations ro ON ro.run_id = r.id
 		LEFT JOIN experiments e ON e.id = r.experiment_id
 		LEFT JOIN experiment_fixed_conditions c ON c.id = e.fixed_condition_id
 		LEFT JOIN experiment_fixed_condition_prompts p ON p.fixed_condition_id = c.id AND p.sequence_no = r.prompt_sequence_no

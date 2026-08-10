@@ -241,7 +241,7 @@ func (s *Store) findExperimentStart(ctx context.Context, requestID string) (doma
 	if err != nil {
 		return domain.ExperimentStart{}, false, fmt.Errorf("find experiment start: %w", err)
 	}
-	runs, err := s.findExperimentWorkspaceRuns(ctx, start.ExperimentID)
+	runs, err := s.findExperimentStartRuns(ctx, start.OperationID)
 	if err != nil {
 		return domain.ExperimentStart{}, false, err
 	}
@@ -256,6 +256,37 @@ func (s *Store) findExperimentStart(ctx context.Context, requestID string) (doma
 	start.FixedConditions = workspace.FixedConditions
 
 	return start, true, nil
+}
+
+// findExperimentStartRuns は開始operationが作成した初回runだけを返す。
+func (s *Store) findExperimentStartRuns(ctx context.Context, operationID string) ([]domain.ExperimentWorkspaceRun, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT id, state, summary, updated_at FROM experiment_runs WHERE operation_id = ? ORDER BY created_at ASC, id ASC", operationID)
+	if err != nil {
+		return nil, fmt.Errorf("query experiment start runs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	runs := make([]domain.ExperimentWorkspaceRun, 0)
+	for rows.Next() {
+		var run domain.ExperimentWorkspaceRun
+		var summary sql.NullString
+		var updatedAt string
+		if err := rows.Scan(&run.ID, &run.State, &summary, &updatedAt); err != nil {
+			return nil, fmt.Errorf("scan experiment start run: %w", err)
+		}
+		if summary.Valid {
+			run.Summary = &summary.String
+		}
+		if run.UpdatedAt, err = time.Parse(time.RFC3339Nano, updatedAt); err != nil {
+			return nil, fmt.Errorf("parse experiment start run update time: %w", err)
+		}
+		runs = append(runs, run)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate experiment start runs: %w", err)
+	}
+
+	return runs, nil
 }
 
 // isExperimentStartRequestConflict は開始request IDの一意制約競合を判定する。

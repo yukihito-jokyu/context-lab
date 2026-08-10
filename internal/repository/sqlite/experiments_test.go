@@ -639,7 +639,7 @@ func recreateWorkspaceProgressTable(t *testing.T, store *Store, table string) {
 	if _, err := store.db.Exec("DROP TABLE " + table); err != nil {
 		t.Fatalf("drop %s error = %v", table, err)
 	}
-	if _, err := store.db.Exec("CREATE TABLE " + table + " (id TEXT, experiment_id TEXT, state TEXT, summary TEXT, created_at TEXT, updated_at TEXT)"); err != nil {
+	if _, err := store.db.Exec("CREATE TABLE " + table + " (id TEXT, experiment_id TEXT, retry_of_run_id TEXT, state TEXT, summary TEXT, created_at TEXT, updated_at TEXT)"); err != nil {
 		t.Fatalf("create %s error = %v", table, err)
 	}
 }
@@ -2111,6 +2111,7 @@ func workspaceRunReadRows(scenario briefingReadScenario) (driver.Rows, error) {
 	}
 	rows := &briefingReadRows{columns: []string{
 		"id",
+		"retry_of_run_id",
 		"state",
 		"summary",
 		"updated_at",
@@ -2119,6 +2120,7 @@ func workspaceRunReadRows(scenario briefingReadScenario) (driver.Rows, error) {
 	case workspaceReadRunsScanError:
 		rows.values = [][]driver.Value{{
 			"run-1",
+			nil,
 			"completed",
 			"summary",
 			nil,
@@ -2126,6 +2128,7 @@ func workspaceRunReadRows(scenario briefingReadScenario) (driver.Rows, error) {
 	case workspaceReadRunsInvalidTime:
 		rows.values = [][]driver.Value{{
 			"run-1",
+			nil,
 			"completed",
 			nil,
 			"invalid-time",

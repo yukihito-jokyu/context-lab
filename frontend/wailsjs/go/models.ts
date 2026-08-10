@@ -511,6 +511,7 @@ export namespace wails {
 	}
 	export class ExperimentWorkspaceRunData {
 	    id: string;
+	    retryOfRunId?: string;
 	    state: string;
 	    summary?: string;
 	    // Go type: time
@@ -523,6 +524,7 @@ export namespace wails {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
+	        this.retryOfRunId = source["retryOfRunId"];
 	        this.state = source["state"];
 	        this.summary = source["summary"];
 	        this.updatedAt = this.convertValues(source["updatedAt"], null);
@@ -1455,6 +1457,93 @@ export namespace wails {
 	}
 	
 	
+	export class RetryEndedRunData {
+	    sourceRunId: string;
+	    experimentId: string;
+	    retryRunId: string;
+	    operationId: string;
+	    state: string;
+	    // Go type: time
+	    createdAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new RetryEndedRunData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sourceRunId = source["sourceRunId"];
+	        this.experimentId = source["experimentId"];
+	        this.retryRunId = source["retryRunId"];
+	        this.operationId = source["operationId"];
+	        this.state = source["state"];
+	        this.createdAt = this.convertValues(source["createdAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class RetryEndedRunRequest {
+	    requestId: string;
+	    runId: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RetryEndedRunRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.requestId = source["requestId"];
+	        this.runId = source["runId"];
+	    }
+	}
+	export class RetryEndedRunResponse {
+	    data?: RetryEndedRunData;
+	    error?: ErrorResponse;
+	
+	    static createFrom(source: any = {}) {
+	        return new RetryEndedRunResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.data = this.convertValues(source["data"], RetryEndedRunData);
+	        this.error = this.convertValues(source["error"], ErrorResponse);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	
 	
 	

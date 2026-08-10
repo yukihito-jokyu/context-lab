@@ -563,7 +563,7 @@ func (s *Store) GetExperimentWorkspace(ctx context.Context, experimentID string)
 
 // findExperimentWorkspaceRuns は実験に属するrunの安全な進行状況を取得する。
 func (s *Store) findExperimentWorkspaceRuns(ctx context.Context, experimentID string) ([]domain.ExperimentWorkspaceRun, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT id, state, summary, updated_at FROM experiment_runs WHERE experiment_id = ? ORDER BY created_at ASC, id ASC", experimentID)
+	rows, err := s.db.QueryContext(ctx, "SELECT id, retry_of_run_id, state, summary, updated_at FROM experiment_runs WHERE experiment_id = ? ORDER BY created_at ASC, id ASC", experimentID)
 	if err != nil {
 		return nil, fmt.Errorf("query experiment workspace runs: %w", err)
 	}
@@ -574,13 +574,17 @@ func (s *Store) findExperimentWorkspaceRuns(ctx context.Context, experimentID st
 	runs := make([]domain.ExperimentWorkspaceRun, 0)
 	for rows.Next() {
 		var run domain.ExperimentWorkspaceRun
+		var retryOfRunID sql.NullString
 		var summary sql.NullString
 		var updatedAt string
-		if err := rows.Scan(&run.ID, &run.State, &summary, &updatedAt); err != nil {
+		if err := rows.Scan(&run.ID, &retryOfRunID, &run.State, &summary, &updatedAt); err != nil {
 			return nil, fmt.Errorf("scan experiment workspace run: %w", err)
 		}
 		if summary.Valid {
 			run.Summary = &summary.String
+		}
+		if retryOfRunID.Valid {
+			run.RetryOfRunID = &retryOfRunID.String
 		}
 		run.UpdatedAt, err = time.Parse(time.RFC3339Nano, updatedAt)
 		if err != nil {
