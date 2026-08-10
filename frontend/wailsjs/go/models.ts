@@ -61,6 +61,181 @@ export namespace wails {
 		}
 	}
 	
+	export class EvaluationDetailEvaluationData {
+	    id: string;
+	    experimentId: string;
+	    runId: string;
+	    state: string;
+	    summary?: string;
+	    // Go type: time
+	    createdAt: any;
+	    // Go type: time
+	    updatedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new EvaluationDetailEvaluationData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.experimentId = source["experimentId"];
+	        this.runId = source["runId"];
+	        this.state = source["state"];
+	        this.summary = source["summary"];
+	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.updatedAt = this.convertValues(source["updatedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class EvaluationDetailEvidenceData {
+	    runSummary: string;
+	    evaluationAxes: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new EvaluationDetailEvidenceData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.runSummary = source["runSummary"];
+	        this.evaluationAxes = source["evaluationAxes"];
+	    }
+	}
+	export class EvaluationDetailFailureData {
+	    code: string;
+	    // Go type: time
+	    occurredAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new EvaluationDetailFailureData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.code = source["code"];
+	        this.occurredAt = this.convertValues(source["occurredAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class EvaluationDetailOperationData {
+	    id: string;
+	    state: string;
+	    // Go type: time
+	    updatedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new EvaluationDetailOperationData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.state = source["state"];
+	        this.updatedAt = this.convertValues(source["updatedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class EvaluationDetailReconciliationData {
+	    state: string;
+	    // Go type: time
+	    lastObservedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new EvaluationDetailReconciliationData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.state = source["state"];
+	        this.lastObservedAt = this.convertValues(source["lastObservedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class EvaluationDetailResultData {
+	    status: string;
+	    summary?: string;
+	    reasonCode?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new EvaluationDetailResultData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.status = source["status"];
+	        this.summary = source["summary"];
+	        this.reasonCode = source["reasonCode"];
+	    }
+	}
 	export class ExperimentBriefResponse {
 	    versionId: string;
 	    purpose: string;
@@ -464,6 +639,81 @@ export namespace wails {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.data = this.convertValues(source["data"], FixExperimentConditionsData);
 	        this.error = this.convertValues(source["error"], FixExperimentConditionsError);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class GetEvaluationDetailData {
+	    evaluation: EvaluationDetailEvaluationData;
+	    operation: EvaluationDetailOperationData;
+	    evidence: EvaluationDetailEvidenceData;
+	    result: EvaluationDetailResultData;
+	    failure?: EvaluationDetailFailureData;
+	    reconciliation: EvaluationDetailReconciliationData;
+	    // Go type: time
+	    lastConfirmedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new GetEvaluationDetailData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.evaluation = this.convertValues(source["evaluation"], EvaluationDetailEvaluationData);
+	        this.operation = this.convertValues(source["operation"], EvaluationDetailOperationData);
+	        this.evidence = this.convertValues(source["evidence"], EvaluationDetailEvidenceData);
+	        this.result = this.convertValues(source["result"], EvaluationDetailResultData);
+	        this.failure = this.convertValues(source["failure"], EvaluationDetailFailureData);
+	        this.reconciliation = this.convertValues(source["reconciliation"], EvaluationDetailReconciliationData);
+	        this.lastConfirmedAt = this.convertValues(source["lastConfirmedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class GetEvaluationDetailResponse {
+	    data?: GetEvaluationDetailData;
+	    error?: ErrorResponse;
+	
+	    static createFrom(source: any = {}) {
+	        return new GetEvaluationDetailResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.data = this.convertValues(source["data"], GetEvaluationDetailData);
+	        this.error = this.convertValues(source["error"], ErrorResponse);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

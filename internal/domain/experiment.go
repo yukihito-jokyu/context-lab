@@ -214,6 +214,56 @@ type ExperimentRunReconciliation struct {
 	LastObservedAt time.Time
 }
 
+// ExperimentEvaluationDetail は評価詳細画面が再表示する安全な評価結果。
+type ExperimentEvaluationDetail struct {
+	Evaluation      ExperimentEvaluationFact
+	Operation       ExperimentEvaluationOperation
+	Evidence        ExperimentEvaluationEvidence
+	Result          ExperimentEvaluationResult
+	Failure         *ExperimentEvaluationFailure
+	Reconciliation  ExperimentEvaluationReconciliation
+	LastConfirmedAt time.Time
+}
+
+// ExperimentEvaluationFact は評価の安全な実行事実。
+type ExperimentEvaluationFact struct {
+	ID           string
+	ExperimentID string
+	RunID        string
+	State        string
+	Summary      *string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// ExperimentEvaluationOperation は評価開始操作の安全な状態。
+type ExperimentEvaluationOperation struct {
+	ID, State string
+	UpdatedAt time.Time
+}
+
+// ExperimentEvaluationEvidence は評価に用いた安全な根拠。
+type ExperimentEvaluationEvidence struct{ RunSummary, EvaluationAxes string }
+
+// ExperimentEvaluationResult は評価結果または評価不能理由。
+type ExperimentEvaluationResult struct {
+	Status     string
+	Summary    *string
+	ReasonCode string
+}
+
+// ExperimentEvaluationFailure は評価不能の安全な理由。
+type ExperimentEvaluationFailure struct {
+	Code       string
+	OccurredAt time.Time
+}
+
+// ExperimentEvaluationReconciliation は評価結果の照合状態。
+type ExperimentEvaluationReconciliation struct {
+	State          string
+	LastObservedAt time.Time
+}
+
 // ExperimentStart は実験開始commandの永続的な結果。
 type ExperimentStart struct {
 	RequestID       string

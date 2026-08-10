@@ -257,6 +257,104 @@ type StartRunEvaluationData struct {
 	State        string `json:"state"`
 }
 
+// GetEvaluationDetailResponse は評価詳細queryの結果。
+type GetEvaluationDetailResponse struct {
+	Data  *GetEvaluationDetailData `json:"data,omitempty"`
+	Error *ErrorResponse           `json:"error,omitempty"`
+}
+
+// GetEvaluationDetailData は画面へ返す安全な評価詳細。
+type GetEvaluationDetailData struct {
+	Evaluation      EvaluationDetailEvaluationData     `json:"evaluation"`
+	Operation       EvaluationDetailOperationData      `json:"operation"`
+	Evidence        EvaluationDetailEvidenceData       `json:"evidence"`
+	Result          EvaluationDetailResultData         `json:"result"`
+	Failure         *EvaluationDetailFailureData       `json:"failure,omitempty"`
+	Reconciliation  EvaluationDetailReconciliationData `json:"reconciliation"`
+	LastConfirmedAt time.Time                          `json:"lastConfirmedAt"`
+}
+
+// EvaluationDetailEvaluationData は評価実行事実。
+type EvaluationDetailEvaluationData struct {
+	ID           string    `json:"id"`
+	ExperimentID string    `json:"experimentId"`
+	RunID        string    `json:"runId"`
+	State        string    `json:"state"`
+	Summary      *string   `json:"summary,omitempty"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+// EvaluationDetailOperationData は評価操作状態。
+type EvaluationDetailOperationData struct {
+	ID        string    `json:"id"`
+	State     string    `json:"state"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// EvaluationDetailEvidenceData は安全な評価根拠。
+type EvaluationDetailEvidenceData struct {
+	RunSummary     string `json:"runSummary"`
+	EvaluationAxes string `json:"evaluationAxes"`
+}
+
+// EvaluationDetailResultData は評価結果または理由。
+type EvaluationDetailResultData struct {
+	Status     string  `json:"status"`
+	Summary    *string `json:"summary,omitempty"`
+	ReasonCode string  `json:"reasonCode,omitempty"`
+}
+
+// EvaluationDetailFailureData は評価不能理由。
+type EvaluationDetailFailureData struct {
+	Code       string    `json:"code"`
+	OccurredAt time.Time `json:"occurredAt"`
+}
+
+// EvaluationDetailReconciliationData は照合状態。
+type EvaluationDetailReconciliationData struct {
+	State          string    `json:"state"`
+	LastObservedAt time.Time `json:"lastObservedAt"`
+}
+
+// ExperimentEvaluationDetailsHandler は評価詳細queryのWails binding。
+type ExperimentEvaluationDetailsHandler struct {
+	getEvaluationDetail *usecase.GetEvaluationDetail
+	logger              logger.Logger
+}
+
+// NewExperimentEvaluationDetailsHandler は評価詳細bindingを生成。
+func NewExperimentEvaluationDetailsHandler(u *usecase.GetEvaluationDetail, l logger.Logger) *ExperimentEvaluationDetailsHandler {
+	return &ExperimentEvaluationDetailsHandler{getEvaluationDetail: u, logger: l}
+}
+
+// GetEvaluationDetail は評価詳細を画面DTOで返す。
+func (h *ExperimentEvaluationDetailsHandler) GetEvaluationDetail(id string) GetEvaluationDetailResponse {
+	ctx := context.Background()
+	h.logger.Debug(ctx, "get evaluation detail called")
+	if h.getEvaluationDetail == nil {
+		return failGetEvaluationDetail(apperr.New(apperr.CodeEvaluationDetailUnavailable))
+	}
+	d, err := h.getEvaluationDetail.Execute(ctx, id)
+	if err != nil {
+		return failGetEvaluationDetail(err)
+	}
+	data := &GetEvaluationDetailData{Evaluation: EvaluationDetailEvaluationData{ID: d.Evaluation.ID, ExperimentID: d.Evaluation.ExperimentID, RunID: d.Evaluation.RunID, State: d.Evaluation.State, Summary: d.Evaluation.Summary, CreatedAt: d.Evaluation.CreatedAt.UTC(), UpdatedAt: d.Evaluation.UpdatedAt.UTC()}, Operation: EvaluationDetailOperationData{ID: d.Operation.ID, State: d.Operation.State, UpdatedAt: d.Operation.UpdatedAt.UTC()}, Evidence: EvaluationDetailEvidenceData{RunSummary: d.Evidence.RunSummary, EvaluationAxes: d.Evidence.EvaluationAxes}, Result: EvaluationDetailResultData{Status: d.Result.Status, Summary: d.Result.Summary, ReasonCode: d.Result.ReasonCode}, Reconciliation: EvaluationDetailReconciliationData{State: d.Reconciliation.State, LastObservedAt: d.Reconciliation.LastObservedAt.UTC()}, LastConfirmedAt: d.LastConfirmedAt.UTC()}
+	if d.Failure != nil {
+		data.Failure = &EvaluationDetailFailureData{Code: d.Failure.Code, OccurredAt: d.Failure.OccurredAt.UTC()}
+	}
+	return GetEvaluationDetailResponse{Data: data}
+}
+
+// failGetEvaluationDetail は内部エラーを安全なDTOへ変換。
+func failGetEvaluationDetail(err error) GetEvaluationDetailResponse {
+	appErr := apperr.As(err)
+	if appErr == nil {
+		appErr = apperr.NewUnexpected(err)
+	}
+	return GetEvaluationDetailResponse{Error: &ErrorResponse{Code: string(appErr.Code), Message: appErr.Error()}}
+}
+
 // GetRunDetailResponse はrun詳細queryの成功または失敗結果。
 type GetRunDetailResponse struct {
 	Data  *GetRunDetailData `json:"data,omitempty"`

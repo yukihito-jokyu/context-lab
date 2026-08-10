@@ -56,6 +56,7 @@ func main() {
 	experimentWorkspacesHandler := wailshandler.NewExperimentWorkspacesHandler(usecase.NewGetExperimentWorkspace(store), appLogger)
 	experimentRunsHandler := wailshandler.NewExperimentRunsHandler(usecase.NewStartExperiment(store, docker.NewCodexExperimentRunner()), appLogger)
 	experimentEvaluationsHandler := wailshandler.NewExperimentEvaluationsHandler(usecase.NewStartRunEvaluation(store, docker.NewCodexRunEvaluator()), appLogger)
+	evaluationDetailsHandler := wailshandler.NewExperimentEvaluationDetailsHandler(usecase.NewGetEvaluationDetail(store), appLogger)
 	experimentRunDetailsHandler := wailshandler.NewExperimentRunDetailsHandler(usecase.NewGetRunDetail(store), appLogger)
 	preparationsHandler := wailshandler.NewPreparationsHandler(usecase.NewListPreparations(store), appLogger)
 	briefingAdapter := acp.NewCodexBriefingAdapter(filepath.Join(configDirectory, applicationDirectoryName))
@@ -74,7 +75,7 @@ func main() {
 		Height:      800,
 		AssetServer: &assetserver.Options{Assets: assets},
 		OnStartup:   app.startup,
-		Bind:        []interface{}{experimentsHandler, experimentPreparationsHandler, experimentWorkspacesHandler, experimentRunsHandler, experimentEvaluationsHandler, experimentRunDetailsHandler, preparationsHandler, experimentBriefingsHandler},
+		Bind:        []interface{}{experimentsHandler, experimentPreparationsHandler, experimentWorkspacesHandler, experimentRunsHandler, experimentEvaluationsHandler, evaluationDetailsHandler, experimentRunDetailsHandler, preparationsHandler, experimentBriefingsHandler},
 	})
 	if err != nil {
 		appLogger.Error(context.Background(), "run application", err)

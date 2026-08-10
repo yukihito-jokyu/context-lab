@@ -51,7 +51,7 @@ func (u *StartRunEvaluation) Execute(ctx context.Context, requestID, runID strin
 		return replayRunEvaluation(evaluation)
 	}
 
-	_, err = u.evaluator.EvaluateRun(ctx, domain.ExperimentEvaluationRequest{
+	summary, err := u.evaluator.EvaluateRun(ctx, domain.ExperimentEvaluationRequest{
 		RunID:          evaluation.RunID,
 		RunSummary:     evaluation.RunSummary,
 		Purpose:        evaluation.Purpose,
@@ -64,7 +64,7 @@ func (u *StartRunEvaluation) Execute(ctx context.Context, requestID, runID strin
 
 		return domain.ExperimentRunEvaluation{}, runEvaluationFailure(err)
 	}
-	if err := u.store.CompleteRunEvaluation(ctx, evaluation.EvaluationID, "評価を開始しました"); err != nil {
+	if err := u.store.CompleteRunEvaluation(ctx, evaluation.EvaluationID, summary); err != nil {
 		return domain.ExperimentRunEvaluation{}, apperr.Wrap(apperr.CodeRunEvaluationFailed, err)
 	}
 

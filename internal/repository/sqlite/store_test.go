@@ -39,8 +39,8 @@ func TestOpen(t *testing.T) {
 				if err := store.db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 					t.Errorf("schema migrations query error = %v", err)
 				}
-				if migrationCount != 13 {
-					t.Errorf("schema migrations count = %d, want %d", migrationCount, 13)
+				if migrationCount != 14 {
+					t.Errorf("schema migrations count = %d, want %d", migrationCount, 14)
 				}
 				if err := store.migrate(context.Background()); err != nil {
 					t.Errorf("migrate() error = %v", err)
@@ -48,8 +48,8 @@ func TestOpen(t *testing.T) {
 				if err := store.db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 					t.Errorf("schema migrations query after migrate error = %v", err)
 				}
-				if migrationCount != 13 {
-					t.Errorf("schema migrations count after migrate = %d, want %d", migrationCount, 13)
+				if migrationCount != 14 {
+					t.Errorf("schema migrations count after migrate = %d, want %d", migrationCount, 14)
 				}
 				var busyTimeout int
 				if err := store.db.QueryRow("PRAGMA busy_timeout").Scan(&busyTimeout); err != nil {
