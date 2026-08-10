@@ -20,6 +20,10 @@ type StartRunEvaluationResponse = Record<string, unknown> & {
 };
 type GetRunDetailResponse = Record<string, unknown>;
 type GetEvaluationDetailResponse = Record<string, unknown>;
+type RetryEndedRunResponse = Record<string, unknown> & {
+  delayMs?: number;
+  result?: Record<string, unknown>;
+};
 type ListPreparationsResponse = Record<string, unknown>;
 
 declare global {
@@ -286,6 +290,31 @@ async function installEvaluationDetailMock(
         GetEvaluationDetail: () => {
           const response = evaluationDetailResponses[Math.min(evaluationDetailCallCount, evaluationDetailResponses.length - 1)];
           evaluationDetailCallCount += 1;
+          return Promise.resolve(response);
+        },
+      };
+    `,
+  });
+}
+
+async function installRetryEndedRunMock(
+  page: Page,
+  responses: RetryEndedRunResponse[],
+) {
+  await page.addInitScript({
+    content: `
+      const retryResponses = ${JSON.stringify(responses)};
+      let retryCallCount = 0;
+      window.go = window.go || { wails: {} };
+      window.go.wails.ExperimentRunRetriesHandler = {
+        RetryEndedRun: () => {
+          const response = retryResponses[Math.min(retryCallCount, retryResponses.length - 1)];
+          retryCallCount += 1;
+          if (response.delayMs) {
+            return new Promise((resolve) => {
+              window.setTimeout(() => resolve(response.result), response.delayMs);
+            });
+          }
           return Promise.resolve(response);
         },
       };
@@ -1536,6 +1565,79 @@ test("評価詳細は不能理由を表示し、取得失敗後に再読込で�
   );
   await page.locator("#reload-evaluation-detail-button").click();
   await expect(page.getByText("再読込後の評価結果")).toBeVisible();
+});
+
+test("失敗したrunは固定条件を確認して再実行用runを作成できる", async ({
+  page,
+}) => {
+  const workspace = {
+    experimentId: "EXP-028",
+    state: "running",
+    fixedConditions: {
+      fixedConditionId: "fixed-retry-1",
+      purpose: "失敗runを再実行する",
+      environmentConditions: "同一環境",
+      initialInput: "入力",
+      prompts: [{ sequenceNo: 1, content: "固定prompt" }],
+      evaluationAxes: "正確性",
+      fixedAt: confirmedAt,
+    },
+    conditionFixOperation: { operationId: "operation-retry-1" },
+    runs: [
+      {
+        id: "run-failed-28",
+        state: "failed",
+        summary: "実行に失敗しました",
+        updatedAt: confirmedAt,
+      },
+    ],
+    evaluations: [],
+    lastConfirmedAt: confirmedAt,
+  };
+  await installExperimentWorkspaceMock(page, [{ data: workspace }]);
+  await installRetryEndedRunMock(page, [
+    {
+      delayMs: 300,
+      result: {
+        error: {
+          code: "RUN_RETRY_UNAVAILABLE",
+          message: "一時的に作成できません。",
+        },
+      },
+    },
+    {
+      data: {
+        sourceRunId: "run-failed-28",
+        experimentId: "EXP-028",
+        retryRunId: "run-retry-28",
+        operationId: "retry-operation-28",
+        state: "queued",
+        createdAt: confirmedAt,
+      },
+    },
+  ]);
+  await page.goto("/experiments/EXP-028/workspace");
+
+  await page.locator("#retry-ended-run-button-run-failed-28").click();
+  await expect(
+    page.locator("#retry-ended-run-dialog-run-failed-28"),
+  ).toContainText("元run「run-failed-28」");
+  await expect(
+    page.locator("#retry-ended-run-dialog-run-failed-28"),
+  ).toContainText("fixed-retry-1");
+  await page.getByRole("button", { name: "新runを作成" }).click();
+  await expect(
+    page.getByRole("button", { name: "再実行用runを作成しています…" }),
+  ).toBeDisabled();
+  await expect(
+    page.locator("#retry-ended-run-error-run-failed-28"),
+  ).toContainText("一時的に作成できません。");
+
+  await page.locator("#retry-ended-run-button-run-failed-28").click();
+  await page.getByRole("button", { name: "新runを作成" }).click();
+  await expect(
+    page.locator("#retry-ended-run-success-run-failed-28"),
+  ).toContainText("新run: run-retry-28（queued）");
 });
 
 test("run詳細は観測、差分、照合中と部分取得を表示する", async ({ page }) => {
