@@ -124,3 +124,54 @@ func TestCodexExperimentRunnerRunExperimentHandlesCommandResults(t *testing.T) {
 		})
 	}
 }
+
+// Docker評価起動はホスト共有をせず、評価用argvだけを構築する。
+func TestCodexRunEvaluatorEvaluateRun(t *testing.T) {
+	tests := []struct {
+		name      string
+		request   domain.ExperimentEvaluationRequest
+		command   string
+		wantError bool
+	}{
+		{
+			name: "隔離評価を開始する",
+			request: domain.ExperimentEvaluationRequest{
+				RunID:          "run-1",
+				RunSummary:     "run要約",
+				Purpose:        "目的",
+				EvaluationAxes: "評価軸",
+			},
+			command: "exit 0",
+		},
+		{
+			name:      "入力不足を拒否する",
+			wantError: true,
+		},
+		{
+			name: "Docker失敗を返す",
+			request: domain.ExperimentEvaluationRequest{
+				RunID:          "run-1",
+				RunSummary:     "run要約",
+				EvaluationAxes: "評価軸",
+			},
+			command:   "exit 1",
+			wantError: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			originalCommandContext := commandContext
+			t.Cleanup(func() { commandContext = originalCommandContext })
+			commandContext = func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+				return exec.CommandContext(ctx, "sh", "-c", tt.command)
+			}
+			summary, err := NewCodexRunEvaluator().EvaluateRun(context.Background(), tt.request)
+			if gotError := err != nil; gotError != tt.wantError {
+				t.Fatalf("EvaluateRun() error = %v, want error = %v", err, tt.wantError)
+			}
+			if !tt.wantError && summary != "評価を開始しました" {
+				t.Errorf("summary = %q, want safe summary", summary)
+			}
+		})
+	}
+}
