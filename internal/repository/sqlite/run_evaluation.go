@@ -70,7 +70,7 @@ func (s *Store) beginRunEvaluation(ctx context.Context, requestID, runID string)
 	evaluation.State = domain.ExperimentEvaluationStateStarting
 	now := time.Now().UTC()
 	nowValue := now.Format(time.RFC3339Nano)
-	if _, err := tx.ExecContext(ctx, "INSERT INTO experiment_evaluations (id, experiment_id, run_id, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", evaluation.EvaluationID, evaluation.ExperimentID, evaluation.RunID, evaluation.State, nowValue, nowValue); err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT INTO experiment_evaluations (id, experiment_id, run_id, state, last_observed_at, reconciliation_state, result_status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", evaluation.EvaluationID, evaluation.ExperimentID, evaluation.RunID, evaluation.State, nowValue, "reconciling", "notRecorded", nowValue, nowValue); err != nil {
 		if isRunEvaluationAlreadyExists(err) {
 			if rollbackErr := tx.Rollback(); rollbackErr != nil && rollbackErr != sql.ErrTxDone {
 				return domain.ExperimentRunEvaluation{}, false, fmt.Errorf("rollback duplicate run evaluation: %w", rollbackErr)
@@ -148,7 +148,11 @@ func (s *Store) updateRunEvaluation(ctx context.Context, evaluationID, state, su
 	} else {
 		summaryValue = summary
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE experiment_evaluations SET state = ?, summary = ?, updated_at = ? WHERE id = ?", state, summaryValue, now, evaluationID); err != nil {
+	resultStatus := "complete"
+	if state == domain.ExperimentEvaluationStateFailed {
+		resultStatus = "partial"
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE experiment_evaluations SET state = ?, summary = ?, result_status = ?, result_reason_code = ?, last_observed_at = ?, reconciliation_state = ?, updated_at = ? WHERE id = ?", state, summaryValue, resultStatus, nullableFailureCode(failureCode), now, "confirmed", now, evaluationID); err != nil {
 		return fmt.Errorf("update run evaluation: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE experiment_evaluation_operations SET state = ?, failure_code = ?, updated_at = ? WHERE evaluation_id = ?", state, nullableFailureCode(failureCode), now, evaluationID); err != nil {
