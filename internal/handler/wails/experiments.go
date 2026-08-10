@@ -2,7 +2,9 @@ package wails
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/yukihito-jokyu/context-lab/internal/domain"
@@ -115,6 +117,40 @@ type SaveExperimentPreparationDraftData struct {
 	SavedAt               time.Time                             `json:"savedAt"`
 }
 
+// FixExperimentConditionsRequest は固定する実験条件のフォーム値。
+type FixExperimentConditionsRequest struct {
+	RequestID             string   `json:"requestId"`
+	ExperimentID          string   `json:"experimentId"`
+	Purpose               string   `json:"purpose"`
+	Hypothesis            *string  `json:"hypothesis,omitempty"`
+	EnvironmentConditions string   `json:"environmentConditions"`
+	InitialInput          string   `json:"initialInput"`
+	Prompts               []string `json:"prompts"`
+	EvaluationAxes        string   `json:"evaluationAxes"`
+}
+
+// FixExperimentConditionsResponse は条件固定の成功または失敗結果。
+type FixExperimentConditionsResponse struct {
+	Data  *FixExperimentConditionsData  `json:"data,omitempty"`
+	Error *FixExperimentConditionsError `json:"error,omitempty"`
+}
+
+// FixExperimentConditionsData は固定済み条件の安全な識別子。
+type FixExperimentConditionsData struct {
+	ExperimentID     string    `json:"experimentId"`
+	State            string    `json:"state"`
+	FixedConditionID string    `json:"fixedConditionId"`
+	OperationID      string    `json:"operationId"`
+	FixedAt          time.Time `json:"fixedAt"`
+}
+
+// FixExperimentConditionsError は条件固定の安全な画面エラー。
+type FixExperimentConditionsError struct {
+	Code        string            `json:"code"`
+	Message     string            `json:"message"`
+	FieldErrors map[string]string `json:"fieldErrors,omitempty"`
+}
+
 // ExperimentPreparationSourceResponse は採用元の安全な表示用情報。
 type ExperimentPreparationSourceResponse struct {
 	State     string `json:"state"`
@@ -134,6 +170,7 @@ type ExperimentPreparationRequiredFieldsResponse struct {
 type ExperimentPreparationsHandler struct {
 	getExperimentPreparation       *usecase.GetExperimentPreparation
 	saveExperimentPreparationDraft *usecase.SaveExperimentPreparationDraft
+	fixExperimentConditions        *usecase.FixExperimentConditions
 	logger                         logger.Logger
 }
 
@@ -145,6 +182,83 @@ func NewExperimentPreparationsHandler(getExperimentPreparation *usecase.GetExper
 	}
 
 	return handler
+}
+
+// NewExperimentPreparationsHandlerWithConditions は条件固定commandを含む実験準備bindingを生成。
+func NewExperimentPreparationsHandlerWithConditions(getExperimentPreparation *usecase.GetExperimentPreparation, appLogger logger.Logger, saveExperimentPreparationDraft *usecase.SaveExperimentPreparationDraft, fixExperimentConditions *usecase.FixExperimentConditions) *ExperimentPreparationsHandler {
+	handler := NewExperimentPreparationsHandler(getExperimentPreparation, appLogger, saveExperimentPreparationDraft)
+	handler.fixExperimentConditions = fixExperimentConditions
+
+	return handler
+}
+
+// FixExperimentConditions はフォームの条件を不変artifactとして固定する。
+func (h *ExperimentPreparationsHandler) FixExperimentConditions(request FixExperimentConditionsRequest) FixExperimentConditionsResponse {
+	ctx := context.Background()
+	h.logger.Info(ctx, "fix experiment conditions called")
+
+	if h.fixExperimentConditions == nil {
+		response := failFixExperimentConditions(apperr.New(apperr.CodeFixConditionsSaveFailed), request)
+		h.logger.ErrorCode(ctx, "fix experiment conditions failed", response.Error.Code, slog.String("operation", "fix_experiment_conditions"))
+
+		return response
+	}
+	prompts := make([]domain.ExperimentPreparationPrompt, 0, len(request.Prompts))
+	for index, content := range request.Prompts {
+		prompts = append(prompts, domain.ExperimentPreparationPrompt{SequenceNo: index + 1, Content: content})
+	}
+	fixed, err := h.fixExperimentConditions.Execute(ctx, domain.ExperimentFixedConditions{
+		RequestID: request.RequestID, ExperimentID: request.ExperimentID, Purpose: request.Purpose, Hypothesis: request.Hypothesis, EnvironmentConditions: request.EnvironmentConditions, InitialInput: request.InitialInput, Prompts: prompts, EvaluationAxes: request.EvaluationAxes,
+	})
+	if err != nil {
+		response := failFixExperimentConditions(err, request)
+		h.logger.ErrorCode(ctx, "fix experiment conditions failed", response.Error.Code, slog.String("operation", "fix_experiment_conditions"))
+
+		return response
+	}
+
+	return FixExperimentConditionsResponse{Data: &FixExperimentConditionsData{ExperimentID: fixed.ExperimentID, State: "ready", FixedConditionID: fixed.FixedConditionID, OperationID: fixed.OperationID, FixedAt: fixed.FixedAt.UTC()}}
+}
+
+// failFixExperimentConditions は内部エラーを安全な条件固定エラーへ変換。
+func failFixExperimentConditions(err error, request FixExperimentConditionsRequest) FixExperimentConditionsResponse {
+	appErr := apperr.As(err)
+	if appErr == nil {
+		appErr = apperr.NewUnexpected(err)
+	}
+	errorResponse := &FixExperimentConditionsError{Code: string(appErr.Code), Message: appErr.Error()}
+	if appErr.Code == apperr.CodeConditionsInvalid {
+		errorResponse.FieldErrors = fixedConditionFieldErrors(request)
+	}
+
+	return FixExperimentConditionsResponse{Error: errorResponse}
+}
+
+// fixedConditionFieldErrors は固定条件フォームの不足フィールドを返す。
+func fixedConditionFieldErrors(request FixExperimentConditionsRequest) map[string]string {
+	fieldErrors := make(map[string]string)
+	if strings.TrimSpace(request.Purpose) == "" {
+		fieldErrors["purpose"] = "目的を入力してください"
+	}
+	if strings.TrimSpace(request.EnvironmentConditions) == "" {
+		fieldErrors["environmentConditions"] = "環境条件を入力してください"
+	}
+	if strings.TrimSpace(request.InitialInput) == "" {
+		fieldErrors["initialInput"] = "初期入力を入力してください"
+	}
+	if strings.TrimSpace(request.EvaluationAxes) == "" {
+		fieldErrors["evaluationAxes"] = "評価軸を入力してください"
+	}
+	if len(request.Prompts) == 0 {
+		fieldErrors["prompts"] = "promptを1件以上入力してください"
+	}
+	for index, prompt := range request.Prompts {
+		if strings.TrimSpace(prompt) == "" {
+			fieldErrors[fmt.Sprintf("prompts.%d", index)] = "promptを入力してください"
+		}
+	}
+
+	return fieldErrors
 }
 
 // SaveExperimentPreparationDraft はフォーム下書きを画面向けDTOで保存。

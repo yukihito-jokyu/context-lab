@@ -219,6 +219,119 @@ export namespace wails {
 		    return a;
 		}
 	}
+	export class FixExperimentConditionsData {
+	    experimentId: string;
+	    state: string;
+	    fixedConditionId: string;
+	    operationId: string;
+	    // Go type: time
+	    fixedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new FixExperimentConditionsData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.experimentId = source["experimentId"];
+	        this.state = source["state"];
+	        this.fixedConditionId = source["fixedConditionId"];
+	        this.operationId = source["operationId"];
+	        this.fixedAt = this.convertValues(source["fixedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class FixExperimentConditionsError {
+	    code: string;
+	    message: string;
+	    fieldErrors?: Record<string, string>;
+	
+	    static createFrom(source: any = {}) {
+	        return new FixExperimentConditionsError(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.code = source["code"];
+	        this.message = source["message"];
+	        this.fieldErrors = source["fieldErrors"];
+	    }
+	}
+	export class FixExperimentConditionsRequest {
+	    requestId: string;
+	    experimentId: string;
+	    purpose: string;
+	    hypothesis?: string;
+	    environmentConditions: string;
+	    initialInput: string;
+	    prompts: string[];
+	    evaluationAxes: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new FixExperimentConditionsRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.requestId = source["requestId"];
+	        this.experimentId = source["experimentId"];
+	        this.purpose = source["purpose"];
+	        this.hypothesis = source["hypothesis"];
+	        this.environmentConditions = source["environmentConditions"];
+	        this.initialInput = source["initialInput"];
+	        this.prompts = source["prompts"];
+	        this.evaluationAxes = source["evaluationAxes"];
+	    }
+	}
+	export class FixExperimentConditionsResponse {
+	    data?: FixExperimentConditionsData;
+	    error?: FixExperimentConditionsError;
+	
+	    static createFrom(source: any = {}) {
+	        return new FixExperimentConditionsResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.data = this.convertValues(source["data"], FixExperimentConditionsData);
+	        this.error = this.convertValues(source["error"], FixExperimentConditionsError);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class GetExperimentBriefingData {
 	    state: string;
 	    messages: ExperimentMessageResponse[];
