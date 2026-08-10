@@ -18,6 +18,41 @@ const meta = {
     sendDerivationBriefMessage: async () => ({
       data: { operationId: "derivation-message-operation-22" },
     }),
+    getDerivationBriefing: async () => ({
+      data: {
+        state: "started",
+        lastConfirmedAt: "2026-08-10T09:00:00Z",
+        messages: [
+          {
+            role: "user",
+            content: "比較条件を変えたいです。",
+            sequenceNo: 1,
+            createdAt: "2026-08-10T09:00:00Z",
+          },
+          {
+            role: "assistant",
+            content: "評価軸を保ったまま条件を調整しましょう。",
+            sequenceNo: 2,
+            createdAt: "2026-08-10T09:00:02Z",
+          },
+        ],
+        latestSuggestion: {
+          id: "suggestion-22",
+          versionNo: 1,
+          purpose: "比較条件の変更を確認する",
+          decision: "比較対象を一つ増やす",
+          hypothesis: "対象を増やすと差異を確認できる",
+          candidatePrompts: ["候補A", "候補B"],
+          evaluationCriteria: "正確性",
+          environmentConditions: "同じ環境",
+          initialInput: "既存入力",
+          successCriteria: "差異が確認できる",
+          requiredConditions: "条件を固定する",
+          openQuestion: "対象数を決める必要があります。",
+          createdAt: "2026-08-10T09:00:02Z",
+        },
+      },
+    }),
   },
 } satisfies Meta<typeof DerivationBriefingDialog>;
 
@@ -57,5 +92,28 @@ export const SendFailure: Story = {
 export const SendPending: Story = {
   args: {
     sendDerivationBriefMessage: () => new Promise<never>(() => undefined),
+  },
+};
+
+export const RefreshFailure: Story = {
+  args: {
+    getDerivationBriefing: async () => ({
+      error: {
+        code: "DERIVATION_BRIEFING_NOT_FOUND",
+        message: "壁打ち内容を取得できませんでした。",
+      },
+    }),
+  },
+};
+
+export const Empty: Story = {
+  args: {
+    getDerivationBriefing: async () => ({
+      data: {
+        state: "started",
+        messages: [],
+        lastConfirmedAt: "2026-08-10T09:00:00Z",
+      },
+    }),
   },
 };

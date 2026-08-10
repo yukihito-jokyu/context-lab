@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/empty";
 import { DerivationBriefingDialog } from "./components/DerivationBriefingDialog";
 import { formatExperimentDateTime } from "./lib/format-experiment-date-time";
+import type { GetDerivationBriefingService } from "./services/get-derivation-briefing-service";
 import type {
   DerivationSource,
   GetDerivationSourceService,
@@ -23,6 +24,7 @@ import type { StartDerivationBriefingService } from "./services/start-derivation
 type DerivationBriefingServices = {
   startDerivationBriefing: StartDerivationBriefingService;
   sendDerivationBriefMessage: SendDerivationBriefMessageService;
+  getDerivationBriefing: GetDerivationBriefingService;
 };
 
 function DerivationSourceContent({
@@ -106,6 +108,7 @@ function DerivationSourceContent({
           sendDerivationBriefMessage={
             briefingServices.sendDerivationBriefMessage
           }
+          getDerivationBriefing={briefingServices.getDerivationBriefing}
         />
       )}
 

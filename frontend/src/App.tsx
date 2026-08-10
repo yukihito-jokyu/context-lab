@@ -12,6 +12,7 @@ import { createDerivedExperiment } from "@/features/experiments/services/create-
 import { createExperimentFromBrief } from "@/features/experiments/services/create-experiment-from-brief-service";
 import { finalizeExperimentConclusion } from "@/features/experiments/services/finalize-experiment-conclusion-service";
 import { fixExperimentConditions } from "@/features/experiments/services/fix-experiment-conditions-service";
+import { getDerivationBriefing } from "@/features/experiments/services/get-derivation-briefing-service";
 import { getDerivationSource } from "@/features/experiments/services/get-derivation-source-service";
 import { getEvaluationDetail } from "@/features/experiments/services/get-evaluation-detail-service";
 import { getExperimentBriefing } from "@/features/experiments/services/get-experiment-briefing-service";
@@ -108,6 +109,7 @@ export default function App() {
         briefingServices={{
           startDerivationBriefing,
           sendDerivationBriefMessage,
+          getDerivationBriefing,
         }}
         experimentId={decodeExperimentID(derivationSourceMatch[1])}
         getDerivationSource={getDerivationSource}

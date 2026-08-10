@@ -207,6 +207,98 @@ export namespace wails {
 		    return a;
 		}
 	}
+	export class DerivationBriefingMessageResponse {
+	    role: string;
+	    content: string;
+	    sequenceNo: number;
+	    // Go type: time
+	    createdAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new DerivationBriefingMessageResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.role = source["role"];
+	        this.content = source["content"];
+	        this.sequenceNo = source["sequenceNo"];
+	        this.createdAt = this.convertValues(source["createdAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class DerivationBriefingSuggestionResponse {
+	    id: string;
+	    versionNo: number;
+	    purpose: string;
+	    decision: string;
+	    hypothesis?: string;
+	    candidatePrompts: string[];
+	    evaluationCriteria: string;
+	    environmentConditions: string;
+	    initialInput: string;
+	    successCriteria: string;
+	    requiredConditions: string;
+	    openQuestion?: string;
+	    // Go type: time
+	    createdAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new DerivationBriefingSuggestionResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.versionNo = source["versionNo"];
+	        this.purpose = source["purpose"];
+	        this.decision = source["decision"];
+	        this.hypothesis = source["hypothesis"];
+	        this.candidatePrompts = source["candidatePrompts"];
+	        this.evaluationCriteria = source["evaluationCriteria"];
+	        this.environmentConditions = source["environmentConditions"];
+	        this.initialInput = source["initialInput"];
+	        this.successCriteria = source["successCriteria"];
+	        this.requiredConditions = source["requiredConditions"];
+	        this.openQuestion = source["openQuestion"];
+	        this.createdAt = this.convertValues(source["createdAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class DerivationEligibilityData {
 	    canCreateDerivedExperiment: boolean;
 	    reasonCode?: string;
@@ -1026,6 +1118,75 @@ export namespace wails {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.data = this.convertValues(source["data"], FixExperimentConditionsData);
 	        this.error = this.convertValues(source["error"], FixExperimentConditionsError);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class GetDerivationBriefingData {
+	    state: string;
+	    messages: DerivationBriefingMessageResponse[];
+	    latestSuggestion?: DerivationBriefingSuggestionResponse;
+	    // Go type: time
+	    lastConfirmedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new GetDerivationBriefingData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.state = source["state"];
+	        this.messages = this.convertValues(source["messages"], DerivationBriefingMessageResponse);
+	        this.latestSuggestion = this.convertValues(source["latestSuggestion"], DerivationBriefingSuggestionResponse);
+	        this.lastConfirmedAt = this.convertValues(source["lastConfirmedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class GetDerivationBriefingResponse {
+	    data?: GetDerivationBriefingData;
+	    error?: ErrorResponse;
+	
+	    static createFrom(source: any = {}) {
+	        return new GetDerivationBriefingResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.data = this.convertValues(source["data"], GetDerivationBriefingData);
+	        this.error = this.convertValues(source["error"], ErrorResponse);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

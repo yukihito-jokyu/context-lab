@@ -46,6 +46,39 @@ type DerivationBriefingMessageResult struct {
 	Suggestion       *ExperimentBrief
 }
 
+// DerivationBriefing は派生実験ブリーフ画面の再表示に必要な永続状態。
+type DerivationBriefing struct {
+	State            string
+	Messages         []DerivationBriefingMessage
+	LatestSuggestion *DerivationBriefingSuggestion
+	LastConfirmedAt  time.Time
+}
+
+// DerivationBriefingMessage は利用者表示用の派生実験ブリーフ会話。
+type DerivationBriefingMessage struct {
+	Role       string
+	Content    string
+	SequenceNo int
+	CreatedAt  time.Time
+}
+
+// DerivationBriefingSuggestion は派生実験ブリーフの一版。
+type DerivationBriefingSuggestion struct {
+	ID                    string
+	VersionNo             int
+	Purpose               string
+	Decision              string
+	Hypothesis            *string
+	CandidatePrompts      []string
+	EvaluationCriteria    string
+	EnvironmentConditions string
+	InitialInput          string
+	SuccessCriteria       string
+	RequiredConditions    string
+	OpenQuestion          *string
+	CreatedAt             time.Time
+}
+
 // ExperimentBriefingMessageOperation は実験ブリーフ会話送信の永続的な結果。
 type ExperimentBriefingMessageOperation struct {
 	RequestID         string
