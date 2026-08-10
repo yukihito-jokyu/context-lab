@@ -279,6 +279,371 @@ func TestStoreGetExperimentPreparation(t *testing.T) {
 	}
 }
 
+// SQLite実験ワークスペースqueryの固定条件と操作読込。
+func TestStoreGetExperimentWorkspace(t *testing.T) {
+	store, fixed := fixedExperimentPreparationStore(t)
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+
+	got, found, err := store.GetExperimentWorkspace(context.Background(), fixed.ExperimentID)
+	if err != nil {
+		t.Fatalf("GetExperimentWorkspace() error = %v", err)
+	}
+	if !found {
+		t.Fatal("found = false, want true")
+	}
+	if got.ExperimentID != fixed.ExperimentID || got.State != "ready" {
+		t.Errorf("workspace = %+v, want ready experiment", got)
+	}
+	if got.FixedConditions.FixedConditionID == "" || got.FixedConditions.Purpose != fixed.Purpose {
+		t.Errorf("FixedConditions = %+v, want persisted conditions", got.FixedConditions)
+	}
+	if got.ConditionFixOperationID == "" || got.ConditionFixOperationAt.IsZero() {
+		t.Errorf("condition fix operation = (%q, %s), want persisted operation", got.ConditionFixOperationID, got.ConditionFixOperationAt)
+	}
+	if len(got.FixedConditions.Prompts) != len(fixed.Prompts) || got.FixedConditions.Prompts[0].Content != fixed.Prompts[0].Content {
+		t.Errorf("Prompts = %+v, want persisted prompt order", got.FixedConditions.Prompts)
+	}
+	updatedAt := "2026-08-10T10:00:00Z"
+	if _, err := store.db.Exec("INSERT INTO experiment_runs (id, experiment_id, state, summary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", "run-1", fixed.ExperimentID, "completed", "要約", updatedAt, updatedAt); err != nil {
+		t.Fatalf("insert run error = %v", err)
+	}
+	if _, err := store.db.Exec("INSERT INTO experiment_evaluations (id, experiment_id, state, summary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", "evaluation-1", fixed.ExperimentID, "completed", "評価要約", updatedAt, updatedAt); err != nil {
+		t.Fatalf("insert evaluation error = %v", err)
+	}
+	got, found, err = store.GetExperimentWorkspace(context.Background(), fixed.ExperimentID)
+	if err != nil {
+		t.Fatalf("GetExperimentWorkspace() after progress error = %v", err)
+	}
+	if !found {
+		t.Fatal("found after progress = false, want true")
+	}
+	if len(got.Runs) != 1 || got.Runs[0].ID != "run-1" || got.Runs[0].State != "completed" || got.Runs[0].Summary == nil || *got.Runs[0].Summary != "要約" {
+		t.Errorf("Runs = %+v, want persisted run", got.Runs)
+	}
+	if len(got.Evaluations) != 1 || got.Evaluations[0].ID != "evaluation-1" || got.Evaluations[0].State != "completed" || got.Evaluations[0].Summary == nil || *got.Evaluations[0].Summary != "評価要約" {
+		t.Errorf("Evaluations = %+v, want persisted evaluation", got.Evaluations)
+	}
+
+	_, found, err = store.GetExperimentWorkspace(context.Background(), "missing")
+	if err != nil {
+		t.Fatalf("missing GetExperimentWorkspace() error = %v", err)
+	}
+	if found {
+		t.Error("missing found = true, want false")
+	}
+}
+
+// SQLite実験ワークスペースqueryの代表的な読込失敗。
+func TestStoreGetExperimentWorkspaceFailures(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(*testing.T, *Store)
+		want  string
+	}{
+		{
+			name: "主record読込失敗を返す",
+			setup: func(t *testing.T, store *Store) {
+				t.Helper()
+				if _, err := store.db.Exec("DROP TABLE experiments"); err != nil {
+					t.Fatalf("drop experiments error = %v", err)
+				}
+			},
+			want: "find experiment workspace",
+		},
+		{
+			name: "更新日時の形式不正を返す",
+			setup: func(t *testing.T, store *Store) {
+				t.Helper()
+				if _, err := store.db.Exec("UPDATE experiments SET updated_at = ? WHERE id = ?", "invalid", "experiment-1"); err != nil {
+					t.Fatalf("update experiment error = %v", err)
+				}
+			},
+			want: "parse experiment workspace update time",
+		},
+		{
+			name: "固定日時の形式不正を返す",
+			setup: func(t *testing.T, store *Store) {
+				t.Helper()
+				if _, err := store.db.Exec("UPDATE experiment_fixed_conditions SET fixed_at = ?", "invalid"); err != nil {
+					t.Fatalf("update fixed conditions error = %v", err)
+				}
+			},
+			want: "parse experiment condition fixed time",
+		},
+		{
+			name: "操作日時の形式不正を返す",
+			setup: func(t *testing.T, store *Store) {
+				t.Helper()
+				if _, err := store.db.Exec("UPDATE experiment_condition_fix_operations SET fixed_at = ?", "invalid"); err != nil {
+					t.Fatalf("update condition operation error = %v", err)
+				}
+			},
+			want: "parse experiment condition operation fixed time",
+		},
+		{
+			name: "prompt読込失敗を返す",
+			setup: func(t *testing.T, store *Store) {
+				t.Helper()
+				if _, err := store.db.Exec("DROP TABLE experiment_fixed_condition_prompts"); err != nil {
+					t.Fatalf("drop prompts error = %v", err)
+				}
+			},
+			want: "query experiment workspace prompts",
+		},
+		{
+			name: "prompt走査失敗を返す",
+			setup: func(t *testing.T, store *Store) {
+				t.Helper()
+				if _, err := store.db.Exec("UPDATE experiment_fixed_condition_prompts SET sequence_no = ? WHERE sequence_no = ?", "invalid", 1); err != nil {
+					t.Fatalf("update fixed prompt error = %v", err)
+				}
+			},
+			want: "scan experiment workspace prompt",
+		},
+		{
+			name: "run読込失敗を返す",
+			setup: func(t *testing.T, store *Store) {
+				t.Helper()
+				if _, err := store.db.Exec("DROP TABLE experiment_runs"); err != nil {
+					t.Fatalf("drop runs error = %v", err)
+				}
+			},
+			want: "query experiment workspace runs",
+		},
+		{
+			name: "run走査失敗を返す",
+			setup: func(t *testing.T, store *Store) {
+				t.Helper()
+				recreateWorkspaceProgressTable(t, store, "experiment_runs")
+				if _, err := store.db.Exec("INSERT INTO experiment_runs (id, experiment_id, state, summary, created_at, updated_at) VALUES (?, ?, NULL, NULL, ?, ?)", "run-1", "experiment-1", "2026-08-10T10:00:00Z", "2026-08-10T10:00:00Z"); err != nil {
+					t.Fatalf("insert invalid run error = %v", err)
+				}
+			},
+			want: "scan experiment workspace run",
+		},
+		{
+			name: "run更新日時の形式不正を返す",
+			setup: func(t *testing.T, store *Store) {
+				t.Helper()
+				if _, err := store.db.Exec("INSERT INTO experiment_runs (id, experiment_id, state, summary, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?)", "run-1", "experiment-1", "completed", "2026-08-10T10:00:00Z", "invalid"); err != nil {
+					t.Fatalf("insert invalid run time error = %v", err)
+				}
+			},
+			want: "parse experiment workspace run update time",
+		},
+		{
+			name: "evaluation読込失敗を返す",
+			setup: func(t *testing.T, store *Store) {
+				t.Helper()
+				if _, err := store.db.Exec("DROP TABLE experiment_evaluations"); err != nil {
+					t.Fatalf("drop evaluations error = %v", err)
+				}
+			},
+			want: "query experiment workspace evaluations",
+		},
+		{
+			name: "evaluation走査失敗を返す",
+			setup: func(t *testing.T, store *Store) {
+				t.Helper()
+				recreateWorkspaceProgressTable(t, store, "experiment_evaluations")
+				if _, err := store.db.Exec("INSERT INTO experiment_evaluations (id, experiment_id, state, summary, created_at, updated_at) VALUES (?, ?, NULL, NULL, ?, ?)", "evaluation-1", "experiment-1", "2026-08-10T10:00:00Z", "2026-08-10T10:00:00Z"); err != nil {
+					t.Fatalf("insert invalid evaluation error = %v", err)
+				}
+			},
+			want: "scan experiment workspace evaluation",
+		},
+		{
+			name: "evaluation更新日時の形式不正を返す",
+			setup: func(t *testing.T, store *Store) {
+				t.Helper()
+				if _, err := store.db.Exec("INSERT INTO experiment_evaluations (id, experiment_id, state, summary, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?)", "evaluation-1", "experiment-1", "completed", "2026-08-10T10:00:00Z", "invalid"); err != nil {
+					t.Fatalf("insert invalid evaluation time error = %v", err)
+				}
+			},
+			want: "parse experiment workspace evaluation update time",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store, _ := fixedExperimentPreparationStore(t)
+			t.Cleanup(func() {
+				if err := store.Close(); err != nil {
+					t.Errorf("Close() error = %v", err)
+				}
+			})
+			tt.setup(t, store)
+
+			_, _, err := store.GetExperimentWorkspace(context.Background(), "experiment-1")
+			if err == nil {
+				t.Fatal("GetExperimentWorkspace() error = nil, want read failure")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("GetExperimentWorkspace() error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// SQLite実験ワークスペースの補助読取失敗。
+func TestStoreGetExperimentWorkspaceProgressReadFailures(t *testing.T) {
+	tests := []struct {
+		name     string
+		scenario briefingReadScenario
+		want     string
+	}{
+		{
+			name:     "固定promptのclose失敗を返す",
+			scenario: workspaceReadPromptsCloseError,
+			want:     "iterate experiment workspace prompts",
+		},
+		{
+			name:     "固定promptの反復失敗を返す",
+			scenario: workspaceReadPromptsRowsError,
+			want:     "iterate experiment workspace prompts",
+		},
+		{
+			name:     "run読取失敗を返す",
+			scenario: workspaceReadRunsQueryError,
+			want:     "query experiment workspace runs",
+		},
+		{
+			name:     "evaluation読取失敗を返す",
+			scenario: workspaceReadEvaluationsQueryError,
+			want:     "query experiment workspace evaluations",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newBriefingReadTestStore(t, tt.scenario)
+
+			_, _, err := store.GetExperimentWorkspace(context.Background(), "experiment-1")
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("GetExperimentWorkspace() error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// SQLite実験ワークスペース進行状況helperの失敗正規化。
+func TestStoreExperimentWorkspaceProgressReadFailures(t *testing.T) {
+	tests := []struct {
+		name     string
+		scenario briefingReadScenario
+		read     func(context.Context, *Store) error
+		want     string
+	}{
+		{
+			name:     "run query失敗を返す",
+			scenario: workspaceReadRunsQueryError,
+			read: func(ctx context.Context, store *Store) error {
+				_, err := store.findExperimentWorkspaceRuns(ctx, "experiment-1")
+
+				return err
+			},
+			want: "query experiment workspace runs",
+		},
+		{
+			name:     "run scan失敗を返す",
+			scenario: workspaceReadRunsScanError,
+			read: func(ctx context.Context, store *Store) error {
+				_, err := store.findExperimentWorkspaceRuns(ctx, "experiment-1")
+
+				return err
+			},
+			want: "scan experiment workspace run",
+		},
+		{
+			name:     "run日時不正を返す",
+			scenario: workspaceReadRunsInvalidTime,
+			read: func(ctx context.Context, store *Store) error {
+				_, err := store.findExperimentWorkspaceRuns(ctx, "experiment-1")
+
+				return err
+			},
+			want: "parse experiment workspace run update time",
+		},
+		{
+			name:     "run反復失敗を返す",
+			scenario: workspaceReadRunsRowsError,
+			read: func(ctx context.Context, store *Store) error {
+				_, err := store.findExperimentWorkspaceRuns(ctx, "experiment-1")
+
+				return err
+			},
+			want: "iterate experiment workspace runs",
+		},
+		{
+			name:     "evaluation query失敗を返す",
+			scenario: workspaceReadEvaluationsQueryError,
+			read: func(ctx context.Context, store *Store) error {
+				_, err := store.findExperimentWorkspaceEvaluations(ctx, "experiment-1")
+
+				return err
+			},
+			want: "query experiment workspace evaluations",
+		},
+		{
+			name:     "evaluation scan失敗を返す",
+			scenario: workspaceReadEvaluationsScanError,
+			read: func(ctx context.Context, store *Store) error {
+				_, err := store.findExperimentWorkspaceEvaluations(ctx, "experiment-1")
+
+				return err
+			},
+			want: "scan experiment workspace evaluation",
+		},
+		{
+			name:     "evaluation日時不正を返す",
+			scenario: workspaceReadEvaluationsInvalidTime,
+			read: func(ctx context.Context, store *Store) error {
+				_, err := store.findExperimentWorkspaceEvaluations(ctx, "experiment-1")
+
+				return err
+			},
+			want: "parse experiment workspace evaluation update time",
+		},
+		{
+			name:     "evaluation反復失敗を返す",
+			scenario: workspaceReadEvaluationsRowsError,
+			read: func(ctx context.Context, store *Store) error {
+				_, err := store.findExperimentWorkspaceEvaluations(ctx, "experiment-1")
+
+				return err
+			},
+			want: "iterate experiment workspace evaluations",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newBriefingReadTestStore(t, tt.scenario)
+
+			err := tt.read(context.Background(), store)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("read() error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// recreateWorkspaceProgressTable は走査失敗検証用のnullable進行テーブルを再作成する。
+func recreateWorkspaceProgressTable(t *testing.T, store *Store, table string) {
+	t.Helper()
+
+	if _, err := store.db.Exec("DROP TABLE " + table); err != nil {
+		t.Fatalf("drop %s error = %v", table, err)
+	}
+	if _, err := store.db.Exec("CREATE TABLE " + table + " (id TEXT, experiment_id TEXT, state TEXT, summary TEXT, created_at TEXT, updated_at TEXT)"); err != nil {
+		t.Fatalf("create %s error = %v", table, err)
+	}
+}
+
 // SQLite実験準備queryの失敗正規化。
 func TestStoreGetExperimentPreparationFailures(t *testing.T) {
 	tests := []struct {
@@ -1583,20 +1948,30 @@ func TestStoreExperimentBriefingReadBranches(t *testing.T) {
 type briefingReadScenario string
 
 const (
-	briefingReadMessagesQueryError    briefingReadScenario = "messages-query-error"
-	briefingReadBriefQueryError       briefingReadScenario = "brief-query-error"
-	briefingReadSessionEmptyUpdatedAt briefingReadScenario = "session-empty-updated-at"
-	briefingReadSessionInvalidTime    briefingReadScenario = "session-invalid-time"
-	briefingReadMessagesCloseError    briefingReadScenario = "messages-close-error"
-	briefingReadMessagesScanError     briefingReadScenario = "messages-scan-error"
-	briefingReadMessagesInvalidTime   briefingReadScenario = "messages-invalid-time"
-	briefingReadMessagesRowsError     briefingReadScenario = "messages-rows-error"
-	briefingReadBriefInvalidTime      briefingReadScenario = "brief-invalid-time"
-	preparationReadQueryError         briefingReadScenario = "preparation-query-error"
-	preparationReadInvalidTime        briefingReadScenario = "preparation-invalid-time"
-	preparationReadPromptsQueryError  briefingReadScenario = "preparation-prompts-query-error"
-	preparationReadPromptsScanError   briefingReadScenario = "preparation-prompts-scan-error"
-	preparationReadPromptsRowsError   briefingReadScenario = "preparation-prompts-rows-error"
+	briefingReadMessagesQueryError      briefingReadScenario = "messages-query-error"
+	briefingReadBriefQueryError         briefingReadScenario = "brief-query-error"
+	briefingReadSessionEmptyUpdatedAt   briefingReadScenario = "session-empty-updated-at"
+	briefingReadSessionInvalidTime      briefingReadScenario = "session-invalid-time"
+	briefingReadMessagesCloseError      briefingReadScenario = "messages-close-error"
+	briefingReadMessagesScanError       briefingReadScenario = "messages-scan-error"
+	briefingReadMessagesInvalidTime     briefingReadScenario = "messages-invalid-time"
+	briefingReadMessagesRowsError       briefingReadScenario = "messages-rows-error"
+	briefingReadBriefInvalidTime        briefingReadScenario = "brief-invalid-time"
+	preparationReadQueryError           briefingReadScenario = "preparation-query-error"
+	preparationReadInvalidTime          briefingReadScenario = "preparation-invalid-time"
+	preparationReadPromptsQueryError    briefingReadScenario = "preparation-prompts-query-error"
+	preparationReadPromptsScanError     briefingReadScenario = "preparation-prompts-scan-error"
+	preparationReadPromptsRowsError     briefingReadScenario = "preparation-prompts-rows-error"
+	workspaceReadPromptsCloseError      briefingReadScenario = "workspace-prompts-close-error"
+	workspaceReadPromptsRowsError       briefingReadScenario = "workspace-prompts-rows-error"
+	workspaceReadRunsQueryError         briefingReadScenario = "workspace-runs-query-error"
+	workspaceReadRunsScanError          briefingReadScenario = "workspace-runs-scan-error"
+	workspaceReadRunsInvalidTime        briefingReadScenario = "workspace-runs-invalid-time"
+	workspaceReadRunsRowsError          briefingReadScenario = "workspace-runs-rows-error"
+	workspaceReadEvaluationsQueryError  briefingReadScenario = "workspace-evaluations-query-error"
+	workspaceReadEvaluationsScanError   briefingReadScenario = "workspace-evaluations-scan-error"
+	workspaceReadEvaluationsInvalidTime briefingReadScenario = "workspace-evaluations-invalid-time"
+	workspaceReadEvaluationsRowsError   briefingReadScenario = "workspace-evaluations-rows-error"
 )
 
 // newBriefingReadTestStore は読み出し失敗再現用SQLiteストアを生成する。
@@ -1658,8 +2033,16 @@ func (*briefingReadConnection) Begin() (driver.Tx, error) {
 // QueryContext はscenarioに応じた実験ブリーフ読み出し結果を返す。
 func (c *briefingReadConnection) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
 	switch {
+	case strings.Contains(query, "FROM experiments e JOIN experiment_fixed_conditions"):
+		return workspaceReadRows(c.scenario)
 	case strings.Contains(query, "FROM experiments e"):
 		return preparationReadRows(c.scenario)
+	case strings.Contains(query, "FROM experiment_fixed_condition_prompts"):
+		return workspacePromptReadRows(c.scenario)
+	case strings.Contains(query, "FROM experiment_runs"):
+		return workspaceRunReadRows(c.scenario)
+	case strings.Contains(query, "FROM experiment_evaluations"):
+		return workspaceEvaluationReadRows(c.scenario)
 	case strings.Contains(query, "FROM experiment_preparation_prompts"):
 		return preparationPromptReadRows(c.scenario)
 	case strings.Contains(query, "FROM preparation_sessions"):
@@ -1671,6 +2054,120 @@ func (c *briefingReadConnection) QueryContext(_ context.Context, query string, _
 	default:
 		return nil, errors.New("unexpected query")
 	}
+}
+
+// workspaceReadRows は実験ワークスペースqueryの結果を返す。
+func workspaceReadRows(briefingReadScenario) (driver.Rows, error) {
+	return &briefingReadRows{
+		columns: []string{
+			"state",
+			"updated_at",
+			"fixed_condition_id",
+			"purpose",
+			"hypothesis",
+			"environment_conditions",
+			"initial_input",
+			"evaluation_axes",
+			"fixed_at",
+			"operation_id",
+			"operation_fixed_at",
+		},
+		values: [][]driver.Value{{
+			"ready",
+			"2026-08-10T00:00:00Z",
+			"condition-1",
+			"purpose",
+			nil,
+			"environment",
+			"input",
+			"criteria",
+			"2026-08-10T00:00:00Z",
+			"operation-1",
+			"2026-08-10T00:00:00Z",
+		}},
+	}, nil
+}
+
+// workspacePromptReadRows は固定prompt queryの結果または失敗を返す。
+func workspacePromptReadRows(scenario briefingReadScenario) (driver.Rows, error) {
+	rows := &briefingReadRows{columns: []string{
+		"sequence_no",
+		"content",
+	}}
+	switch scenario {
+	case workspaceReadPromptsCloseError:
+		rows.closeErr = errors.New("workspace prompts close failed")
+	case workspaceReadPromptsRowsError:
+		rows.nextErr = errors.New("workspace prompts iteration failed")
+	}
+
+	return rows, nil
+}
+
+// workspaceRunReadRows はrun queryの結果または失敗を返す。
+func workspaceRunReadRows(scenario briefingReadScenario) (driver.Rows, error) {
+	if scenario == workspaceReadRunsQueryError {
+		return nil, errors.New("workspace runs query failed")
+	}
+	rows := &briefingReadRows{columns: []string{
+		"id",
+		"state",
+		"summary",
+		"updated_at",
+	}}
+	switch scenario {
+	case workspaceReadRunsScanError:
+		rows.values = [][]driver.Value{{
+			"run-1",
+			"completed",
+			"summary",
+			nil,
+		}}
+	case workspaceReadRunsInvalidTime:
+		rows.values = [][]driver.Value{{
+			"run-1",
+			"completed",
+			nil,
+			"invalid-time",
+		}}
+	case workspaceReadRunsRowsError:
+		rows.nextErr = errors.New("workspace runs iteration failed")
+	}
+
+	return rows, nil
+}
+
+// workspaceEvaluationReadRows はevaluation queryの結果または失敗を返す。
+func workspaceEvaluationReadRows(scenario briefingReadScenario) (driver.Rows, error) {
+	if scenario == workspaceReadEvaluationsQueryError {
+		return nil, errors.New("workspace evaluations query failed")
+	}
+	rows := &briefingReadRows{columns: []string{
+		"id",
+		"state",
+		"summary",
+		"updated_at",
+	}}
+	switch scenario {
+	case workspaceReadEvaluationsScanError:
+		rows.values = [][]driver.Value{{
+			"evaluation-1",
+			"completed",
+			"summary",
+			nil,
+		}}
+	case workspaceReadEvaluationsInvalidTime:
+		rows.values = [][]driver.Value{{
+			"evaluation-1",
+			"completed",
+			nil,
+			"invalid-time",
+		}}
+	case workspaceReadEvaluationsRowsError:
+		rows.nextErr = errors.New("workspace evaluations iteration failed")
+	}
+
+	return rows, nil
 }
 
 // preparationReadRows は実験準備queryの結果または失敗を返す。
