@@ -23,6 +23,7 @@ import { listExperiments } from "@/features/experiments/services/list-experiment
 import { retryEndedRun } from "@/features/experiments/services/retry-ended-run-service";
 import { saveExperimentPreparationDraft } from "@/features/experiments/services/save-experiment-preparation-draft-service";
 import { sendExperimentBriefMessage } from "@/features/experiments/services/send-experiment-brief-message-service";
+import { startDerivationBriefing } from "@/features/experiments/services/start-derivation-briefing-service";
 import { startExperimentBriefing } from "@/features/experiments/services/start-experiment-briefing-service";
 import { startExperiment } from "@/features/experiments/services/start-experiment-service";
 import { startRunEvaluation } from "@/features/experiments/services/start-run-evaluation-service";
@@ -103,6 +104,9 @@ export default function App() {
   if (derivationSourceMatch) {
     return (
       <DerivationSourcePage
+        briefingServices={{
+          startDerivationBriefing,
+        }}
         experimentId={decodeExperimentID(derivationSourceMatch[1])}
         getDerivationSource={getDerivationSource}
       />
