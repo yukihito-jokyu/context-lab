@@ -47,6 +47,9 @@ const (
 	CodeRunDetailRequestInvalid           Code = "RUN_DETAIL_REQUEST_INVALID"
 	CodeRunDetailNotFound                 Code = "RUN_DETAIL_NOT_FOUND"
 	CodeRunDetailUnavailable              Code = "RUN_DETAIL_UNAVAILABLE"
+	CodeEvaluationDetailRequestInvalid    Code = "EVALUATION_DETAIL_REQUEST_INVALID"
+	CodeEvaluationDetailNotFound          Code = "EVALUATION_DETAIL_NOT_FOUND"
+	CodeEvaluationDetailUnavailable       Code = "EVALUATION_DETAIL_UNAVAILABLE"
 	CodeOperationTimeout                  Code = "OPERATION_TIMEOUT"
 	CodeOperationCanceled                 Code = "OPERATION_CANCELED"
 	CodeUnexpected                        Code = "UNEXPECTED"
@@ -96,6 +99,9 @@ var defaultMessages = map[Code]message{
 	CodeRunDetailRequestInvalid:           "run詳細の取得要求が不正です",
 	CodeRunDetailNotFound:                 "runが見つかりません",
 	CodeRunDetailUnavailable:              "run詳細を取得できませんでした",
+	CodeEvaluationDetailRequestInvalid:    "評価詳細の取得要求が不正です",
+	CodeEvaluationDetailNotFound:          "評価が見つかりません",
+	CodeEvaluationDetailUnavailable:       "評価詳細を取得できませんでした",
 	CodeOperationTimeout:                  "実験一覧の取得がタイムアウトしました",
 	CodeOperationCanceled:                 "実験一覧の取得を中止しました",
 	CodeUnexpected:                        "予期しないエラーが発生しました",

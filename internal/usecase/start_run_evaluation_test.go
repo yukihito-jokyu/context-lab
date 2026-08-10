@@ -152,6 +152,9 @@ func TestStartRunEvaluationExecute(t *testing.T) {
 			if wantState == domain.ExperimentEvaluationStateStarting && store.completed != 1 {
 				t.Errorf("completed = %d, want 1", store.completed)
 			}
+			if wantState == domain.ExperimentEvaluationStateStarting && store.completedSummary != "評価要約" {
+				t.Errorf("completedSummary = %q, want %q", store.completedSummary, "評価要約")
+			}
 		})
 	}
 }
@@ -176,13 +179,14 @@ func testRunEvaluation(state string) domain.ExperimentRunEvaluation {
 
 // runEvaluationStore は評価永続化portのtest double。
 type runEvaluationStore struct {
-	evaluation  domain.ExperimentRunEvaluation
-	created     bool
-	beginErr    error
-	completed   int
-	failed      int
-	completeErr error
-	failErr     error
+	evaluation       domain.ExperimentRunEvaluation
+	created          bool
+	beginErr         error
+	completed        int
+	completedSummary string
+	failed           int
+	completeErr      error
+	failErr          error
 }
 
 // BeginRunEvaluation は指定済み評価結果を返却。
@@ -191,8 +195,9 @@ func (s *runEvaluationStore) BeginRunEvaluation(context.Context, string, string)
 }
 
 // CompleteRunEvaluation は評価完了を記録。
-func (s *runEvaluationStore) CompleteRunEvaluation(context.Context, string, string) error {
+func (s *runEvaluationStore) CompleteRunEvaluation(_ context.Context, _ string, summary string) error {
 	s.completed++
+	s.completedSummary = summary
 
 	return s.completeErr
 }
