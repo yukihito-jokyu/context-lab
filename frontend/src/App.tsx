@@ -1,6 +1,7 @@
 import { EnvironmentPreparationListPage } from "@/features/environment-preparation/EnvironmentPreparationListPage";
 import { listPreparations } from "@/features/environment-preparation/services/list-preparations-service";
 import { ComparisonPage } from "@/features/experiments/ComparisonPage";
+import { DerivationSourcePage } from "@/features/experiments/DerivationSourcePage";
 import { EvaluationDetailPage } from "@/features/experiments/EvaluationDetailPage";
 import { ExperimentListPage } from "@/features/experiments/ExperimentListPage";
 import { ExperimentPreparationPage } from "@/features/experiments/ExperimentPreparationPage";
@@ -9,6 +10,7 @@ import { RunEvaluationPage } from "@/features/experiments/RunEvaluationPage";
 import { createExperimentFromBrief } from "@/features/experiments/services/create-experiment-from-brief-service";
 import { finalizeExperimentConclusion } from "@/features/experiments/services/finalize-experiment-conclusion-service";
 import { fixExperimentConditions } from "@/features/experiments/services/fix-experiment-conditions-service";
+import { getDerivationSource } from "@/features/experiments/services/get-derivation-source-service";
 import { getEvaluationDetail } from "@/features/experiments/services/get-evaluation-detail-service";
 import { getExperimentBriefing } from "@/features/experiments/services/get-experiment-briefing-service";
 import { getExperimentComparison } from "@/features/experiments/services/get-experiment-comparison-service";
@@ -51,6 +53,9 @@ export default function App() {
   const comparisonMatch = window.location.pathname.match(
     /^\/experiments\/([^/]+)\/comparison$/,
   );
+  const derivationSourceMatch = window.location.pathname.match(
+    /^\/experiments\/([^/]+)\/derivations$/,
+  );
   const evaluationMatch = window.location.pathname.match(
     /^\/evaluations\/([^/]+)$/,
   );
@@ -86,6 +91,15 @@ export default function App() {
         experimentId={decodeExperimentID(comparisonMatch[1])}
         finalizeExperimentConclusion={finalizeExperimentConclusion}
         getExperimentComparison={getExperimentComparison}
+      />
+    );
+  }
+
+  if (derivationSourceMatch) {
+    return (
+      <DerivationSourcePage
+        experimentId={decodeExperimentID(derivationSourceMatch[1])}
+        getDerivationSource={getDerivationSource}
       />
     );
   }
