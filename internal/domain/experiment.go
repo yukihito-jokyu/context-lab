@@ -173,13 +173,16 @@ type ExperimentRunRequest struct {
 }
 
 const (
-	ExperimentStartStateStarting = "starting"
-	ExperimentStartStateRunning  = "running"
-	ExperimentStartStateFailed   = "failed"
-	ExperimentRunStateQueued     = "queued"
-	ExperimentRunStateRunning    = "running"
-	ExperimentRunStateCompleted  = "completed"
-	ExperimentRunStateFailed     = "failed"
+	ExperimentStartStateStarting       = "starting"
+	ExperimentStartStateRunning        = "running"
+	ExperimentStartStateFailed         = "failed"
+	ExperimentRunStateQueued           = "queued"
+	ExperimentRunStateRunning          = "running"
+	ExperimentRunStateCompleted        = "completed"
+	ExperimentRunStateFailed           = "failed"
+	ExperimentEvaluationStateStarting  = "starting"
+	ExperimentEvaluationStateCompleted = "completed"
+	ExperimentEvaluationStateFailed    = "failed"
 )
 
 // ExperimentWorkspaceEvaluation は実験ワークスペースに表示するevaluationの安全な進行状況。
@@ -188,6 +191,30 @@ type ExperimentWorkspaceEvaluation struct {
 	State     string
 	Summary   *string
 	UpdatedAt time.Time
+}
+
+// ExperimentRunEvaluation は一件のrun評価commandの永続的な結果。
+type ExperimentRunEvaluation struct {
+	RequestID      string
+	ExperimentID   string
+	RunID          string
+	EvaluationID   string
+	OperationID    string
+	State          string
+	Summary        *string
+	FailureCode    string
+	UpdatedAt      time.Time
+	RunSummary     string
+	Purpose        string
+	EvaluationAxes string
+}
+
+// ExperimentEvaluationRequest は隔離評価runnerへ渡す安全な入力。
+type ExperimentEvaluationRequest struct {
+	RunID          string
+	RunSummary     string
+	Purpose        string
+	EvaluationAxes string
 }
 
 // Valid は固定できる必須条件が揃っているかを返す。

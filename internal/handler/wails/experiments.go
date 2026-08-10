@@ -237,6 +237,69 @@ type StartExperimentData struct {
 	Runs         []ExperimentWorkspaceRunData `json:"runs"`
 }
 
+// StartRunEvaluationRequest はrun評価開始commandの画面入力。
+type StartRunEvaluationRequest struct {
+	RequestID string `json:"requestId"`
+	RunID     string `json:"runId"`
+}
+
+// StartRunEvaluationResponse はrun評価開始commandの成功または失敗結果。
+type StartRunEvaluationResponse struct {
+	Data  *StartRunEvaluationData `json:"data,omitempty"`
+	Error *ErrorResponse          `json:"error,omitempty"`
+}
+
+// StartRunEvaluationData は開始済み評価の画面安全な進行状況。
+type StartRunEvaluationData struct {
+	RunID        string `json:"runId"`
+	EvaluationID string `json:"evaluationId"`
+	OperationID  string `json:"operationId"`
+	State        string `json:"state"`
+}
+
+// ExperimentEvaluationsHandler はrun評価開始commandのWails binding。
+type ExperimentEvaluationsHandler struct {
+	startRunEvaluation *usecase.StartRunEvaluation
+	logger             logger.Logger
+}
+
+// NewExperimentEvaluationsHandler はrun評価開始bindingを生成。
+func NewExperimentEvaluationsHandler(startRunEvaluation *usecase.StartRunEvaluation, appLogger logger.Logger) *ExperimentEvaluationsHandler {
+	return &ExperimentEvaluationsHandler{startRunEvaluation: startRunEvaluation, logger: appLogger}
+}
+
+// StartRunEvaluation は完了済みrunの隔離評価を開始する。
+func (h *ExperimentEvaluationsHandler) StartRunEvaluation(request StartRunEvaluationRequest) StartRunEvaluationResponse {
+	ctx := context.Background()
+	h.logger.Info(ctx, "start run evaluation called")
+
+	if h.startRunEvaluation == nil {
+		response := failStartRunEvaluation(apperr.New(apperr.CodeRunEvaluationFailed))
+		h.logger.ErrorCode(ctx, "start run evaluation failed", response.Error.Code, slog.String("operation", "start_run_evaluation"))
+
+		return response
+	}
+	evaluation, err := h.startRunEvaluation.Execute(ctx, request.RequestID, request.RunID)
+	if err != nil {
+		response := failStartRunEvaluation(err)
+		h.logger.ErrorCode(ctx, "start run evaluation failed", response.Error.Code, slog.String("operation", "start_run_evaluation"))
+
+		return response
+	}
+
+	return StartRunEvaluationResponse{Data: &StartRunEvaluationData{RunID: evaluation.RunID, EvaluationID: evaluation.EvaluationID, OperationID: evaluation.OperationID, State: evaluation.State}}
+}
+
+// failStartRunEvaluation は内部エラーを安全な評価開始エラーへ変換。
+func failStartRunEvaluation(err error) StartRunEvaluationResponse {
+	appErr := apperr.As(err)
+	if appErr == nil {
+		appErr = apperr.NewUnexpected(err)
+	}
+
+	return StartRunEvaluationResponse{Error: &ErrorResponse{Code: string(appErr.Code), Message: appErr.Error()}}
+}
+
 // ExperimentRunsHandler は実験開始commandのWails binding。
 type ExperimentRunsHandler struct {
 	startExperiment *usecase.StartExperiment

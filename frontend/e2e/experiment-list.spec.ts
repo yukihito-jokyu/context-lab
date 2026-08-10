@@ -14,6 +14,10 @@ type StartExperimentResponse = Record<string, unknown> & {
   delayMs?: number;
   result?: Record<string, unknown>;
 };
+type StartRunEvaluationResponse = Record<string, unknown> & {
+  delayMs?: number;
+  result?: Record<string, unknown>;
+};
 type ListPreparationsResponse = Record<string, unknown>;
 
 declare global {
@@ -47,6 +51,10 @@ declare global {
     __startExperimentRequests: Array<{
       requestId: string;
       experimentId: string;
+    }>;
+    __startRunEvaluationRequests: Array<{
+      requestId: string;
+      runId: string;
     }>;
   }
 }
@@ -186,15 +194,26 @@ async function installExperimentWorkspaceMock(
       },
     },
   ],
+  evaluationResponses: StartRunEvaluationResponse[] = [
+    {
+      error: {
+        code: "RUN_EVALUATION_UNAVAILABLE",
+        message: "評価を開始できませんでした。",
+      },
+    },
+  ],
 ) {
   await page.addInitScript({
     content: `
       const workspaceResponses = ${JSON.stringify(responses)};
       const startResponses = ${JSON.stringify(startResponses)};
+      const evaluationResponses = ${JSON.stringify(evaluationResponses)};
       let workspaceCallCount = 0;
       let startCallCount = 0;
+      let evaluationCallCount = 0;
       window.go = window.go || { wails: {} };
       window.__startExperimentRequests = [];
+      window.__startRunEvaluationRequests = [];
       window.go.wails.ExperimentWorkspacesHandler = {
         GetExperimentWorkspace: () => {
           const response = workspaceResponses[Math.min(workspaceCallCount, workspaceResponses.length - 1)];
@@ -207,6 +226,19 @@ async function installExperimentWorkspaceMock(
           window.__startExperimentRequests.push(request);
           const response = startResponses[Math.min(startCallCount, startResponses.length - 1)];
           startCallCount += 1;
+          if (response.delayMs) {
+            return new Promise((resolve) => {
+              window.setTimeout(() => resolve(response.result), response.delayMs);
+            });
+          }
+          return Promise.resolve(response);
+        },
+      };
+      window.go.wails.ExperimentEvaluationsHandler = {
+        StartRunEvaluation: (request) => {
+          window.__startRunEvaluationRequests.push(request);
+          const response = evaluationResponses[Math.min(evaluationCallCount, evaluationResponses.length - 1)];
+          evaluationCallCount += 1;
           if (response.delayMs) {
             return new Promise((resolve) => {
               window.setTimeout(() => resolve(response.result), response.delayMs);
@@ -1286,6 +1318,118 @@ test("実験開始の失敗は同じrequest IDで終端再現し、開始中は�
   expect(requests).toHaveLength(2);
   expect(requests[0].requestId).toBe(requests[1].requestId);
   expect(requests[0].experimentId).toBe("EXP-019");
+});
+
+test("完了したrunから評価を開始し、評価到達画面へ遷移する", async ({
+  page,
+}) => {
+  const workspace = {
+    experimentId: "EXP-020",
+    state: "running",
+    fixedConditions: {
+      fixedConditionId: "fixed-6",
+      purpose: "runを評価する",
+      environmentConditions: "同一環境",
+      initialInput: "入力",
+      prompts: [{ sequenceNo: 1, content: "prompt" }],
+      evaluationAxes: "正確性",
+      fixedAt: confirmedAt,
+    },
+    conditionFixOperation: { operationId: "operation-6" },
+    runs: [{ id: "run-20", state: "completed", updatedAt: confirmedAt }],
+    evaluations: [],
+    lastConfirmedAt: confirmedAt,
+  };
+  await installExperimentWorkspaceMock(page, [{ data: workspace }], undefined, [
+    {
+      data: {
+        runId: "run-20",
+        evaluationId: "evaluation-20",
+        operationId: "evaluation-operation-20",
+        state: "evaluating",
+      },
+    },
+  ]);
+  await page.goto("/experiments/EXP-020/workspace");
+
+  await page.locator("#start-run-evaluation-button-run-20").click();
+
+  await expect(page).toHaveURL(
+    /\/evaluations\/evaluation-20\?operationId=evaluation-operation-20$/,
+  );
+  await expect(page.locator("#evaluation-operation-page")).toContainText(
+    "評価ID: evaluation-20",
+  );
+  await expect(page.locator("#evaluation-operation-page")).toContainText(
+    "操作ID: evaluation-operation-20",
+  );
+});
+
+test("評価開始失敗は同じrequest IDで再試行し、開始中は二重送信しない", async ({
+  page,
+}) => {
+  const workspace = {
+    experimentId: "EXP-021",
+    state: "running",
+    fixedConditions: {
+      fixedConditionId: "fixed-7",
+      purpose: "再試行する",
+      environmentConditions: "同一環境",
+      initialInput: "入力",
+      prompts: [{ sequenceNo: 1, content: "prompt" }],
+      evaluationAxes: "正確性",
+      fixedAt: confirmedAt,
+    },
+    conditionFixOperation: { operationId: "operation-7" },
+    runs: [{ id: "run-21", state: "completed", updatedAt: confirmedAt }],
+    evaluations: [],
+    lastConfirmedAt: confirmedAt,
+  };
+  await installExperimentWorkspaceMock(page, [{ data: workspace }], undefined, [
+    {
+      delayMs: 300,
+      result: {
+        error: {
+          code: "RUN_EVALUATION_PENDING",
+          message: "評価を開始中です。",
+        },
+      },
+    },
+    {
+      error: {
+        code: "RUN_EVALUATION_UNAVAILABLE",
+        message: "一時的に評価できません。",
+      },
+    },
+    {
+      error: {
+        code: "RUN_EVALUATION_UNAVAILABLE",
+        message: "一時的に評価できません。",
+      },
+    },
+  ]);
+  await page.goto("/experiments/EXP-021/workspace");
+
+  const button = page.locator("#start-run-evaluation-button-run-21");
+  await button.click();
+  await expect(button).toBeDisabled();
+  await button.click({ force: true }).catch(() => undefined);
+  await expect(page.locator("#run-evaluation-error-run-21")).toContainText(
+    "評価を開始中です。",
+  );
+  await button.click();
+  await expect(page.locator("#run-evaluation-error-run-21")).toContainText(
+    "一時的に評価できません。",
+  );
+  await button.click();
+
+  const requests = await page.evaluate(
+    () => window.__startRunEvaluationRequests,
+  );
+  expect(requests).toHaveLength(3);
+  expect(requests[0].requestId).toBe(requests[1].requestId);
+  expect(requests[1].requestId).toBe(requests[2].requestId);
+  expect(requests[0].runId).toBe("run-21");
 });
 
 test("実験準備の条件固定中はフォームと下書き保存を無効化する", async ({

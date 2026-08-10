@@ -39,6 +39,11 @@ const (
 	CodeExperimentStartNotReady           Code = "EXPERIMENT_START_NOT_READY"
 	CodeExperimentStartPending            Code = "EXPERIMENT_START_PENDING"
 	CodeExperimentStartFailed             Code = "EXPERIMENT_START_UNAVAILABLE"
+	CodeRunEvaluationRequestInvalid       Code = "RUN_EVALUATION_REQUEST_INVALID"
+	CodeRunEvaluationNotReady             Code = "RUN_EVALUATION_NOT_READY"
+	CodeRunEvaluationAlreadyExists        Code = "RUN_EVALUATION_ALREADY_EXISTS"
+	CodeRunEvaluationPending              Code = "RUN_EVALUATION_PENDING"
+	CodeRunEvaluationFailed               Code = "RUN_EVALUATION_UNAVAILABLE"
 	CodeOperationTimeout                  Code = "OPERATION_TIMEOUT"
 	CodeOperationCanceled                 Code = "OPERATION_CANCELED"
 	CodeUnexpected                        Code = "UNEXPECTED"
@@ -80,6 +85,11 @@ var defaultMessages = map[Code]message{
 	CodeExperimentStartNotReady:           "この実験は開始できる状態ではありません",
 	CodeExperimentStartPending:            "実験の開始を確認中です",
 	CodeExperimentStartFailed:             "実験を開始できませんでした",
+	CodeRunEvaluationRequestInvalid:       "run評価の開始要求が不正です",
+	CodeRunEvaluationNotReady:             "このrunは評価できる状態ではありません",
+	CodeRunEvaluationAlreadyExists:        "このrunはすでに評価済みです",
+	CodeRunEvaluationPending:              "run評価の開始を確認中です",
+	CodeRunEvaluationFailed:               "run評価を開始できませんでした",
 	CodeOperationTimeout:                  "実験一覧の取得がタイムアウトしました",
 	CodeOperationCanceled:                 "実験一覧の取得を中止しました",
 	CodeUnexpected:                        "予期しないエラーが発生しました",

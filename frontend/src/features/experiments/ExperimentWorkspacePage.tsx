@@ -5,7 +5,13 @@ import {
   Play,
   RefreshCw,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +25,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { formatExperimentDateTime } from "./lib/format-experiment-date-time";
+import { RunEvaluationStartPanel } from "./RunEvaluationStartPanel";
 import type {
   ExperimentWorkspace,
   GetExperimentWorkspaceService,
@@ -27,11 +34,23 @@ import type {
   StartExperimentService,
   StartedExperiment,
 } from "./services/start-experiment-service";
+import type {
+  StartedRunEvaluation,
+  StartRunEvaluationService,
+} from "./services/start-run-evaluation-service";
 
 type ExperimentWorkspacePageProps = {
   experimentId: string;
   getExperimentWorkspace: GetExperimentWorkspaceService;
   startExperiment: StartExperimentService;
+  startRunEvaluation: StartRunEvaluationService;
+};
+
+type WorkspaceWorkItem = {
+  id: string;
+  state: string;
+  summary?: string;
+  updatedAt: string;
 };
 
 function createRequestId() {
@@ -129,16 +148,13 @@ function WorkList({
   items,
   emptyTitle,
   emptyDescription,
+  renderItemAction,
 }: {
   title: string;
-  items: Array<{
-    id: string;
-    state: string;
-    summary?: string;
-    updatedAt: string;
-  }>;
+  items: WorkspaceWorkItem[];
   emptyTitle: string;
   emptyDescription: string;
+  renderItemAction?: (item: WorkspaceWorkItem) => ReactNode;
 }) {
   return (
     <section aria-label={title}>
@@ -169,6 +185,7 @@ function WorkList({
                     <p className="mt-1 text-xs text-muted-foreground">
                       更新: {formatExperimentDateTime(item.updatedAt)}
                     </p>
+                    {renderItemAction?.(item)}
                   </div>
                   <Badge variant="outline">{item.state}</Badge>
                 </CardContent>
@@ -185,6 +202,7 @@ export function ExperimentWorkspacePage({
   experimentId,
   getExperimentWorkspace,
   startExperiment,
+  startRunEvaluation,
 }: ExperimentWorkspacePageProps) {
   const [workspace, setWorkspace] = useState<ExperimentWorkspace>();
   const [isLoading, setIsLoading] = useState(true);
@@ -197,6 +215,15 @@ export function ExperimentWorkspacePage({
     useState<StartedExperiment>();
   const [isStarting, setIsStarting] = useState(false);
   const startRequestId = useRef<string | undefined>(undefined);
+
+  const onRunEvaluationStarted = useCallback(
+    (evaluation: StartedRunEvaluation) => {
+      window.location.assign(
+        `/evaluations/${encodeURIComponent(evaluation.evaluationId)}?operationId=${encodeURIComponent(evaluation.operationId)}`,
+      );
+    },
+    [],
+  );
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -376,6 +403,14 @@ export function ExperimentWorkspacePage({
                 emptyDescription="実験を開始すると、実行状況がここに表示されます。"
                 emptyTitle="runはまだありません"
                 items={workspace.runs}
+                renderItemAction={(run) => (
+                  <RunEvaluationStartPanel
+                    onStarted={onRunEvaluationStarted}
+                    runId={run.id}
+                    runState={run.state}
+                    startRunEvaluation={startRunEvaluation}
+                  />
+                )}
                 title="実行"
               />
               <WorkList
