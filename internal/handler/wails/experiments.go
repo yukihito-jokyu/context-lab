@@ -217,6 +217,69 @@ type ExperimentWorkspaceEvaluationData struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// StartExperimentRequest は実験開始commandの画面入力。
+type StartExperimentRequest struct {
+	RequestID    string `json:"requestId"`
+	ExperimentID string `json:"experimentId"`
+}
+
+// StartExperimentResponse は実験開始commandの成功または失敗結果。
+type StartExperimentResponse struct {
+	Data  *StartExperimentData `json:"data,omitempty"`
+	Error *ErrorResponse       `json:"error,omitempty"`
+}
+
+// StartExperimentData は開始済みrunの画面安全な進行状況。
+type StartExperimentData struct {
+	ExperimentID string                       `json:"experimentId"`
+	OperationID  string                       `json:"operationId"`
+	State        string                       `json:"state"`
+	Runs         []ExperimentWorkspaceRunData `json:"runs"`
+}
+
+// ExperimentRunsHandler は実験開始commandのWails binding。
+type ExperimentRunsHandler struct {
+	startExperiment *usecase.StartExperiment
+	logger          logger.Logger
+}
+
+// NewExperimentRunsHandler は実験開始bindingを生成。
+func NewExperimentRunsHandler(startExperiment *usecase.StartExperiment, appLogger logger.Logger) *ExperimentRunsHandler {
+	return &ExperimentRunsHandler{startExperiment: startExperiment, logger: appLogger}
+}
+
+// StartExperiment は固定済み全promptの隔離runを開始する。
+func (h *ExperimentRunsHandler) StartExperiment(request StartExperimentRequest) StartExperimentResponse {
+	ctx := context.Background()
+	h.logger.Info(ctx, "start experiment called")
+
+	if h.startExperiment == nil {
+		response := failStartExperiment(apperr.New(apperr.CodeExperimentStartFailed))
+		h.logger.ErrorCode(ctx, "start experiment failed", response.Error.Code, slog.String("operation", "start_experiment"))
+
+		return response
+	}
+	start, err := h.startExperiment.Execute(ctx, request.RequestID, request.ExperimentID)
+	if err != nil {
+		response := failStartExperiment(err)
+		h.logger.ErrorCode(ctx, "start experiment failed", response.Error.Code, slog.String("operation", "start_experiment"))
+
+		return response
+	}
+
+	return StartExperimentResponse{Data: &StartExperimentData{ExperimentID: start.ExperimentID, OperationID: start.OperationID, State: start.State, Runs: toExperimentWorkspaceRunData(start.Runs)}}
+}
+
+// failStartExperiment は内部エラーを安全な開始エラーへ変換。
+func failStartExperiment(err error) StartExperimentResponse {
+	appErr := apperr.As(err)
+	if appErr == nil {
+		appErr = apperr.NewUnexpected(err)
+	}
+
+	return StartExperimentResponse{Error: &ErrorResponse{Code: string(appErr.Code), Message: appErr.Error()}}
+}
+
 // ExperimentWorkspacesHandler は実験ワークスペースqueryのWails binding。
 type ExperimentWorkspacesHandler struct {
 	getExperimentWorkspace *usecase.GetExperimentWorkspace

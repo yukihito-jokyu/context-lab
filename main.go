@@ -13,6 +13,7 @@ import (
 	wailshandler "github.com/yukihito-jokyu/context-lab/internal/handler/wails"
 	"github.com/yukihito-jokyu/context-lab/internal/logger"
 	"github.com/yukihito-jokyu/context-lab/internal/repository/acp"
+	"github.com/yukihito-jokyu/context-lab/internal/repository/docker"
 	"github.com/yukihito-jokyu/context-lab/internal/repository/sqlite"
 	"github.com/yukihito-jokyu/context-lab/internal/usecase"
 )
@@ -53,6 +54,7 @@ func main() {
 		usecase.NewFixExperimentConditions(store),
 	)
 	experimentWorkspacesHandler := wailshandler.NewExperimentWorkspacesHandler(usecase.NewGetExperimentWorkspace(store), appLogger)
+	experimentRunsHandler := wailshandler.NewExperimentRunsHandler(usecase.NewStartExperiment(store, docker.NewCodexExperimentRunner()), appLogger)
 	preparationsHandler := wailshandler.NewPreparationsHandler(usecase.NewListPreparations(store), appLogger)
 	briefingAdapter := acp.NewCodexBriefingAdapter(filepath.Join(configDirectory, applicationDirectoryName))
 	experimentBriefingsHandler := wailshandler.NewExperimentBriefingsHandler(
@@ -70,7 +72,7 @@ func main() {
 		Height:      800,
 		AssetServer: &assetserver.Options{Assets: assets},
 		OnStartup:   app.startup,
-		Bind:        []interface{}{experimentsHandler, experimentPreparationsHandler, experimentWorkspacesHandler, preparationsHandler, experimentBriefingsHandler},
+		Bind:        []interface{}{experimentsHandler, experimentPreparationsHandler, experimentWorkspacesHandler, experimentRunsHandler, preparationsHandler, experimentBriefingsHandler},
 	})
 	if err != nil {
 		appLogger.Error(context.Background(), "run application", err)

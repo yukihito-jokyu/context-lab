@@ -1284,6 +1284,132 @@ type sequenceExperimentReader struct {
 	index   int
 }
 
+// ExperimentRunsHandlerの開始成功と安全な失敗DTO。
+func TestExperimentRunsHandlerStartExperiment(t *testing.T) {
+	tests := []struct {
+		name     string
+		request  StartExperimentRequest
+		start    domain.ExperimentStart
+		created  bool
+		wantCode string
+		wantRuns int
+	}{
+		{
+			name: "全runの開始結果を返す",
+			request: StartExperimentRequest{
+				RequestID:    "request-1",
+				ExperimentID: "experiment-1",
+			},
+			start:    handlerExperimentStart(),
+			created:  true,
+			wantRuns: 1,
+		},
+		{
+			name:     "入力不足を安全なDTOで返す",
+			request:  StartExperimentRequest{},
+			wantCode: string(apperr.CodeExperimentStartRequestInvalid),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &handlerExperimentStartStore{
+				start:   tt.start,
+				created: tt.created,
+			}
+			handler := NewExperimentRunsHandler(usecase.NewStartExperiment(store, handlerExperimentRunner{}), newTestLogger())
+			got := handler.StartExperiment(tt.request)
+			if tt.wantCode != "" {
+				if got.Error == nil || got.Error.Code != tt.wantCode {
+					t.Errorf("Error = %+v, want code %q", got.Error, tt.wantCode)
+				}
+
+				return
+			}
+			if got.Data == nil {
+				t.Fatal("Data = nil, want start result")
+			}
+			if got.Data.ExperimentID != tt.request.ExperimentID || len(got.Data.Runs) != tt.wantRuns {
+				t.Errorf("Data = %+v, want experiment %q and %d runs", got.Data, tt.request.ExperimentID, tt.wantRuns)
+			}
+		})
+	}
+}
+
+// ExperimentRunsHandlerの依存欠落と未知エラーDTO。
+func TestExperimentRunsHandlerFailureFallbacks(t *testing.T) {
+	handler := NewExperimentRunsHandler(nil, newTestLogger())
+	response := handler.StartExperiment(StartExperimentRequest{})
+	if response.Error == nil || response.Error.Code != string(apperr.CodeExperimentStartFailed) {
+		t.Errorf("StartExperiment() error = %+v, want code %q", response.Error, apperr.CodeExperimentStartFailed)
+	}
+	response = failStartExperiment(errors.New("private failure"))
+	if response.Error == nil || response.Error.Code != string(apperr.CodeUnexpected) {
+		t.Errorf("failStartExperiment() error = %+v, want code %q", response.Error, apperr.CodeUnexpected)
+	}
+}
+
+// handlerExperimentStart はhandler検証用の開始結果を返す。
+func handlerExperimentStart() domain.ExperimentStart {
+	return domain.ExperimentStart{
+		RequestID:    "request-1",
+		ExperimentID: "experiment-1",
+		OperationID:  "operation-1",
+		FixedConditions: domain.ExperimentFixedConditions{
+			Prompts: []domain.ExperimentPreparationPrompt{
+				{
+					SequenceNo: 1,
+					Content:    "prompt",
+				},
+			},
+		},
+		Runs: []domain.ExperimentWorkspaceRun{
+			{
+				ID:    "run-1",
+				State: domain.ExperimentRunStateQueued,
+			},
+		},
+	}
+}
+
+// handlerExperimentStartStore は開始永続化portのtest double。
+type handlerExperimentStartStore struct {
+	start   domain.ExperimentStart
+	created bool
+}
+
+// BeginExperiment は指定済み開始結果を返却。
+func (s *handlerExperimentStartStore) BeginExperiment(context.Context, string, string) (domain.ExperimentStart, bool, error) {
+	return s.start, s.created, nil
+}
+
+// MarkExperimentRunRunning はrun開始状態を受理。
+func (*handlerExperimentStartStore) MarkExperimentRunRunning(context.Context, string) error {
+	return nil
+}
+
+// CompleteExperimentRun はrun完了を受理。
+func (*handlerExperimentStartStore) CompleteExperimentRun(context.Context, string, string) error {
+	return nil
+}
+
+// FailExperimentRun はrun失敗を受理。
+func (*handlerExperimentStartStore) FailExperimentRun(context.Context, string, string) error {
+	return nil
+}
+
+// CompleteExperimentStart は開始完了を受理。
+func (*handlerExperimentStartStore) CompleteExperimentStart(context.Context, string) error {
+	return nil
+}
+
+// handlerExperimentRunner は隔離run portのtest double。
+type handlerExperimentRunner struct{}
+
+// RunExperiment は安全な要約を返却。
+func (handlerExperimentRunner) RunExperiment(context.Context, domain.ExperimentRunRequest) (string, error) {
+	return "開始しました", nil
+}
+
 // ListExperiments は次の指定済み一覧またはエラーを返す。
 func (s *sequenceExperimentReader) ListExperiments(context.Context) (domain.ExperimentCollection, error) {
 	result := s.results[s.index]
