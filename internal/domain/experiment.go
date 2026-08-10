@@ -150,6 +150,38 @@ type ExperimentWorkspaceRun struct {
 	UpdatedAt time.Time
 }
 
+// ExperimentStart は実験開始commandの永続的な結果。
+type ExperimentStart struct {
+	RequestID       string
+	ExperimentID    string
+	OperationID     string
+	State           string
+	FailureCode     string
+	FixedConditions ExperimentFixedConditions
+	Runs            []ExperimentWorkspaceRun
+}
+
+// ExperimentRunRequest はDocker runnerへ渡す一件の隔離実行条件。
+type ExperimentRunRequest struct {
+	ExperimentID          string
+	RunID                 string
+	Purpose               string
+	EnvironmentConditions string
+	InitialInput          string
+	Prompt                string
+	EvaluationAxes        string
+}
+
+const (
+	ExperimentStartStateStarting = "starting"
+	ExperimentStartStateRunning  = "running"
+	ExperimentStartStateFailed   = "failed"
+	ExperimentRunStateQueued     = "queued"
+	ExperimentRunStateRunning    = "running"
+	ExperimentRunStateCompleted  = "completed"
+	ExperimentRunStateFailed     = "failed"
+)
+
 // ExperimentWorkspaceEvaluation は実験ワークスペースに表示するevaluationの安全な進行状況。
 type ExperimentWorkspaceEvaluation struct {
 	ID        string

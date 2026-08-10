@@ -35,6 +35,10 @@ const (
 	CodeExperimentWorkspaceNotFound       Code = "EXPERIMENT_WORKSPACE_NOT_FOUND"
 	CodeExperimentWorkspaceNotReady       Code = "EXPERIMENT_WORKSPACE_NOT_READY"
 	CodeExperimentWorkspaceUnavailable    Code = "EXPERIMENT_WORKSPACE_UNAVAILABLE"
+	CodeExperimentStartRequestInvalid     Code = "EXPERIMENT_START_REQUEST_INVALID"
+	CodeExperimentStartNotReady           Code = "EXPERIMENT_START_NOT_READY"
+	CodeExperimentStartPending            Code = "EXPERIMENT_START_PENDING"
+	CodeExperimentStartFailed             Code = "EXPERIMENT_START_UNAVAILABLE"
 	CodeOperationTimeout                  Code = "OPERATION_TIMEOUT"
 	CodeOperationCanceled                 Code = "OPERATION_CANCELED"
 	CodeUnexpected                        Code = "UNEXPECTED"
@@ -72,6 +76,10 @@ var defaultMessages = map[Code]message{
 	CodeExperimentWorkspaceNotFound:       "実験ワークスペースが見つかりません",
 	CodeExperimentWorkspaceNotReady:       "実験ワークスペースはまだ利用できません",
 	CodeExperimentWorkspaceUnavailable:    "実験ワークスペースを取得できませんでした",
+	CodeExperimentStartRequestInvalid:     "実験開始要求が不正です",
+	CodeExperimentStartNotReady:           "この実験は開始できる状態ではありません",
+	CodeExperimentStartPending:            "実験の開始を確認中です",
+	CodeExperimentStartFailed:             "実験を開始できませんでした",
 	CodeOperationTimeout:                  "実験一覧の取得がタイムアウトしました",
 	CodeOperationCanceled:                 "実験一覧の取得を中止しました",
 	CodeUnexpected:                        "予期しないエラーが発生しました",
