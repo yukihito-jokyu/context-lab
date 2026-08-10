@@ -30,10 +30,21 @@ func (s *Store) BeginRunEvaluation(ctx context.Context, requestID, runID string)
 			return existing, false, nil
 		} else {
 			evaluation, created, beginErr := s.beginRunEvaluation(ctx, requestID, runID)
-			if !isSQLiteBusy(beginErr) {
+			if apperr.IsCode(beginErr, apperr.CodeRunEvaluationAlreadyExists) {
+				existing, found, findErr := s.findRunEvaluation(ctx, requestID)
+				if findErr == nil && found && existing.RunID == runID {
+					return existing, false, nil
+				}
+				if findErr != nil && !isSQLiteBusy(findErr) {
+					return domain.ExperimentRunEvaluation{}, false, findErr
+				}
+				// 同じrequestのoperationがコミットされる直前は、次回の再読込でsnapshotへ収束する。
+				lastErr = beginErr
+			} else if !isSQLiteBusy(beginErr) {
 				return evaluation, created, beginErr
+			} else {
+				lastErr = beginErr
 			}
-			lastErr = beginErr
 		}
 		if attempt == runEvaluationRetryLimit-1 {
 			break
