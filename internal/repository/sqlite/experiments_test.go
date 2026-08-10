@@ -207,6 +207,124 @@ func TestStoreCreateExperimentFromBrief(t *testing.T) {
 	}
 }
 
+// SQLite実験準備queryの読込と時系列prompt返却。
+func TestStoreGetExperimentPreparation(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+	createdAt := "2026-08-09T00:00:00Z"
+	if _, err := store.db.Exec("INSERT INTO preparation_sessions (id, kind, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", "session-1", "experiment_brief", domain.BriefingStartStateStarted, createdAt, createdAt); err != nil {
+		t.Fatalf("seed preparation session error = %v", err)
+	}
+	if _, err := store.db.Exec("INSERT INTO briefing_versions (id, preparation_session_id, version_no, decision, success_criteria, required_conditions, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", "version-1", "session-1", 1, "採用", "基準", "条件", createdAt); err != nil {
+		t.Fatalf("seed briefing version error = %v", err)
+	}
+	if _, err := store.db.Exec("INSERT INTO experiments (id, purpose, state, updated_at) VALUES (?, ?, ?, ?)", "experiment-1", "目的", "preparing", createdAt); err != nil {
+		t.Fatalf("seed experiment error = %v", err)
+	}
+	if _, err := store.db.Exec("INSERT INTO experiment_preparations (experiment_id, briefing_session_id, briefing_version_id, hypothesis, environment_conditions, initial_input, evaluation_criteria, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "experiment-1", "session-1", "version-1", "仮説", "隔離環境", "初期入力", "正確性", createdAt, createdAt); err != nil {
+		t.Fatalf("seed experiment preparation error = %v", err)
+	}
+	prompts := []struct {
+		sequence int
+		content  string
+	}{
+		{
+			sequence: 2,
+			content:  "prompt B",
+		},
+		{
+			sequence: 1,
+			content:  "prompt A",
+		},
+	}
+	for _, prompt := range prompts {
+		if _, err := store.db.Exec("INSERT INTO experiment_preparation_prompts (experiment_id, sequence_no, content) VALUES (?, ?, ?)", "experiment-1", prompt.sequence, prompt.content); err != nil {
+			t.Fatalf("seed experiment preparation prompt error = %v", err)
+		}
+	}
+
+	got, found, err := store.GetExperimentPreparation(context.Background(), "experiment-1")
+	if err != nil {
+		t.Fatalf("GetExperimentPreparation() error = %v", err)
+	}
+	if !found {
+		t.Fatal("found = false, want true")
+	}
+	if got.ExperimentID != "experiment-1" || got.Purpose != "目的" || got.Source.VersionID != "version-1" || got.Source.State != "採用" {
+		t.Errorf("preparation = %+v, want safe persisted values", got)
+	}
+	if got.Hypothesis == nil || *got.Hypothesis != "仮説" {
+		t.Errorf("Hypothesis = %v, want 仮説", got.Hypothesis)
+	}
+	if len(got.Prompts) != 2 || got.Prompts[0].SequenceNo != 1 || got.Prompts[1].Content != "prompt B" {
+		t.Errorf("Prompts = %+v, want sequence order", got.Prompts)
+	}
+	if !got.LastConfirmedAt.Equal(time.Date(2026, time.August, 9, 0, 0, 0, 0, time.UTC)) {
+		t.Errorf("LastConfirmedAt = %s, want %s", got.LastConfirmedAt, createdAt)
+	}
+
+	_, found, err = store.GetExperimentPreparation(context.Background(), "missing")
+	if err != nil {
+		t.Fatalf("missing GetExperimentPreparation() error = %v", err)
+	}
+	if found {
+		t.Error("missing found = true, want false")
+	}
+}
+
+// SQLite実験準備queryの失敗正規化。
+func TestStoreGetExperimentPreparationFailures(t *testing.T) {
+	tests := []struct {
+		name     string
+		scenario briefingReadScenario
+		want     string
+	}{
+		{
+			name:     "実験準備query失敗を返す",
+			scenario: preparationReadQueryError,
+			want:     "find experiment preparation",
+		},
+		{
+			name:     "確認時刻不正を返す",
+			scenario: preparationReadInvalidTime,
+			want:     "parse experiment preparation update time",
+		},
+		{
+			name:     "prompt query失敗を返す",
+			scenario: preparationReadPromptsQueryError,
+			want:     "query experiment preparation prompts",
+		},
+		{
+			name:     "prompt scan失敗を返す",
+			scenario: preparationReadPromptsScanError,
+			want:     "scan experiment preparation prompt",
+		},
+		{
+			name:     "prompt反復失敗を返す",
+			scenario: preparationReadPromptsRowsError,
+			want:     "iterate experiment preparation prompts",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newBriefingReadTestStore(t, tt.scenario)
+
+			_, _, err := store.GetExperimentPreparation(context.Background(), "experiment-1")
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("GetExperimentPreparation() error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
 // ブリーフ採用用保存済み版生成。
 func newExperimentCreationTestStore(t *testing.T) *Store {
 	t.Helper()
@@ -1474,6 +1592,11 @@ const (
 	briefingReadMessagesInvalidTime   briefingReadScenario = "messages-invalid-time"
 	briefingReadMessagesRowsError     briefingReadScenario = "messages-rows-error"
 	briefingReadBriefInvalidTime      briefingReadScenario = "brief-invalid-time"
+	preparationReadQueryError         briefingReadScenario = "preparation-query-error"
+	preparationReadInvalidTime        briefingReadScenario = "preparation-invalid-time"
+	preparationReadPromptsQueryError  briefingReadScenario = "preparation-prompts-query-error"
+	preparationReadPromptsScanError   briefingReadScenario = "preparation-prompts-scan-error"
+	preparationReadPromptsRowsError   briefingReadScenario = "preparation-prompts-rows-error"
 )
 
 // newBriefingReadTestStore は読み出し失敗再現用SQLiteストアを生成する。
@@ -1535,6 +1658,10 @@ func (*briefingReadConnection) Begin() (driver.Tx, error) {
 // QueryContext はscenarioに応じた実験ブリーフ読み出し結果を返す。
 func (c *briefingReadConnection) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
 	switch {
+	case strings.Contains(query, "FROM experiments e"):
+		return preparationReadRows(c.scenario)
+	case strings.Contains(query, "FROM experiment_preparation_prompts"):
+		return preparationPromptReadRows(c.scenario)
 	case strings.Contains(query, "FROM preparation_sessions"):
 		return briefingReadSessionRows(c.scenario)
 	case strings.Contains(query, "FROM briefing_messages"):
@@ -1544,6 +1671,64 @@ func (c *briefingReadConnection) QueryContext(_ context.Context, query string, _
 	default:
 		return nil, errors.New("unexpected query")
 	}
+}
+
+// preparationReadRows は実験準備queryの結果または失敗を返す。
+func preparationReadRows(scenario briefingReadScenario) (driver.Rows, error) {
+	if scenario == preparationReadQueryError {
+		return nil, errors.New("preparation query failed")
+	}
+	updatedAt := "2026-08-09T00:00:00Z"
+	if scenario == preparationReadInvalidTime {
+		updatedAt = "invalid-time"
+	}
+
+	return &briefingReadRows{
+		columns: []string{
+			"state",
+			"purpose",
+			"hypothesis",
+			"environment_conditions",
+			"initial_input",
+			"evaluation_criteria",
+			"briefing_version_id",
+			"decision",
+			"updated_at",
+		},
+		values: [][]driver.Value{{
+			"preparing",
+			"purpose",
+			nil,
+			"environment",
+			"input",
+			"criteria",
+			"version-1",
+			"adopted",
+			updatedAt,
+		}},
+	}, nil
+}
+
+// preparationPromptReadRows は実験準備prompt queryの結果または失敗を返す。
+func preparationPromptReadRows(scenario briefingReadScenario) (driver.Rows, error) {
+	if scenario == preparationReadPromptsQueryError {
+		return nil, errors.New("preparation prompts query failed")
+	}
+	rows := &briefingReadRows{columns: []string{
+		"sequence_no",
+		"content",
+	}}
+	switch scenario {
+	case preparationReadPromptsScanError:
+		rows.values = [][]driver.Value{{
+			"invalid-sequence",
+			"prompt",
+		}}
+	case preparationReadPromptsRowsError:
+		rows.nextErr = errors.New("preparation prompts iteration failed")
+	}
+
+	return rows, nil
 }
 
 // briefingReadSessionRows はsession queryの結果を返す。
