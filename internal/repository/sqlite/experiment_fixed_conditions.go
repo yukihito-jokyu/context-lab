@@ -157,7 +157,9 @@ func findCurrentExperimentPreparationDraft(ctx context.Context, queryer conditio
 	if err != nil {
 		return domain.ExperimentFixedConditions{}, fmt.Errorf("find current preparation prompts: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 	for rows.Next() {
 		var prompt domain.ExperimentPreparationPrompt
 		if err := rows.Scan(&prompt.SequenceNo, &prompt.Content); err != nil {
@@ -198,7 +200,9 @@ func findExperimentConditionFixOperation(ctx context.Context, queryer conditionF
 	if err != nil {
 		return domain.ExperimentFixedConditions{}, false, fmt.Errorf("find fixed condition prompts: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 	for rows.Next() {
 		var prompt domain.ExperimentPreparationPrompt
 		if err := rows.Scan(&prompt.SequenceNo, &prompt.Content); err != nil {
