@@ -26,6 +26,10 @@ type RetryEndedRunResponse = Record<string, unknown> & {
 };
 type GetExperimentComparisonResponse = Record<string, unknown>;
 type GetDerivationSourceResponse = Record<string, unknown>;
+type StartDerivationBriefingResponse = Record<string, unknown> & {
+  delayMs?: number;
+  result?: Record<string, unknown>;
+};
 type CreateDerivedExperimentResponse = Record<string, unknown> & {
   delayMs?: number;
   result?: Record<string, unknown>;
@@ -59,6 +63,10 @@ declare global {
       sourceExperimentId: string;
       changes: Record<string, unknown>;
       reason: string;
+    }>;
+    __derivationBriefingRequests: Array<{
+      requestId: string;
+      sourceExperimentId: string;
     }>;
     __draftSaveRequests: Array<{
       requestId: string;
@@ -374,6 +382,33 @@ async function installCreateDerivedExperimentMock(
       window.go.wails.CreateDerivedExperimentsHandler = {
         CreateDerivedExperiment: (request) => {
           window.__createDerivedExperimentRequests.push(request);
+          const response = responses[Math.min(callCount, responses.length - 1)];
+          callCount += 1;
+          if (response.delayMs) {
+            return new Promise((resolve) => {
+              window.setTimeout(() => resolve(response.result), response.delayMs);
+            });
+          }
+          return Promise.resolve(response);
+        },
+      };
+    `,
+  });
+}
+
+async function installDerivationBriefingMock(
+  page: Page,
+  responses: StartDerivationBriefingResponse[],
+) {
+  await page.addInitScript({
+    content: `
+      const responses = ${JSON.stringify(responses)};
+      let callCount = 0;
+      window.go = window.go || { wails: {} };
+      window.__derivationBriefingRequests = [];
+      window.go.wails.DerivationBriefingsHandler = {
+        StartDerivationBriefing: (requestId, sourceExperimentId) => {
+          window.__derivationBriefingRequests.push({ requestId, sourceExperimentId });
           const response = responses[Math.min(callCount, responses.length - 1)];
           callCount += 1;
           if (response.delayMs) {
@@ -1783,9 +1818,9 @@ test("派生の作成元は固定条件・結論・可否を表示し、失敗�
   ).toHaveAttribute("href", "/experiments/EXP-20/derivations/create");
   await expect(
     page.getByRole("button", { name: "壁打ちを開始" }),
-  ).toBeDisabled();
+  ).toBeEnabled();
   await expect(page.locator("#derivation-source-eligibility")).toContainText(
-    "壁打ちは、次の機能で利用可能になります",
+    "派生元の条件と結論をもとに、相談を開始できます",
   );
 
   await installDerivationSourceMock(page, [{ data: ineligible }]);
@@ -1823,6 +1858,68 @@ test("派生の作成元は固定条件・結論・可否を表示し、失敗�
   await expect(page.locator("#derivation-source-conclusion")).toContainText(
     "条件Aを採用します。",
   );
+});
+
+test("派生元から壁打ちを開始し、失敗後は新しい依頼IDで再試行する", async ({
+  page,
+}) => {
+  await installDerivationSourceMock(page, [
+    {
+      data: {
+        source: {
+          experimentId: "EXP-22",
+          purpose: "派生の比較",
+          fixedConditions: {
+            fixedConditionId: "condition-22",
+            purpose: "派生の比較",
+            environmentConditions: "Node.js 22",
+            initialInput: "入力データ",
+            prompts: [{ sequenceNo: 1, content: "条件Aで実行" }],
+            evaluationAxes: "正確性",
+            fixedAt: confirmedAt,
+          },
+          conclusion: {
+            id: "conclusion-22",
+            content: "条件Aを採用します。",
+            state: "finalized",
+            finalizedAt: confirmedAt,
+          },
+        },
+        eligibility: { canCreateDerivedExperiment: true },
+      },
+    },
+  ]);
+  await installDerivationBriefingMock(page, [
+    {
+      error: {
+        code: "DERIVATION_BRIEFING_START_FAILED",
+        message: "壁打ちを開始できませんでした。",
+      },
+    },
+    {
+      data: {
+        briefingSessionId: "derivation-briefing-22",
+        operationId: "derivation-operation-22",
+        sourceExperimentId: "EXP-22",
+      },
+    },
+  ]);
+  await page.goto("/experiments/EXP-22/derivations");
+  await page.locator("#start-derivation-briefing-button").click();
+  await expect(page.locator("#derivation-briefing-start-error")).toContainText(
+    "壁打ちを開始できませんでした。",
+  );
+  await page.getByRole("button", { name: "もう一度試す" }).click();
+  await expect(page.locator("#derivation-briefing-started")).toContainText(
+    "EXP-22",
+  );
+  const requests = await page.evaluate(
+    () => window.__derivationBriefingRequests,
+  );
+  expect(requests).toHaveLength(2);
+  expect(requests[0].sourceExperimentId).toBe("EXP-22");
+  expect(requests[1].sourceExperimentId).toBe("EXP-22");
+  expect(requests[0].requestId).not.toBe(requests[1].requestId);
 });
 
 test("派生実験は差分と理由を検証し、同じ依頼IDで再試行して準備へ遷移する", async ({
