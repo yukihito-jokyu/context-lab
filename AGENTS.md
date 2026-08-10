@@ -24,3 +24,10 @@
 
 - 定型コマンドは`Taskfile.yml`の`task`を優先する。
 - Go、frontend、Storybook、Wails E2Eの必要な検証をIssueごとに実行する。
+
+## コミット
+
+- `.claude/commands/commit.md`をコミット時の規約として適用する。
+- `.commit-template`に従う日本語のメッセージとし、末尾に`#Issue番号`を付ける。
+- 関連する変更だけを小さな単位でコミットし、pre-commit失敗時は同じファイルを再stageして再試行する。
+- `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`を追加しない。
