@@ -1,5 +1,6 @@
 import { EnvironmentPreparationListPage } from "@/features/environment-preparation/EnvironmentPreparationListPage";
 import { listPreparations } from "@/features/environment-preparation/services/list-preparations-service";
+import { ComparisonPage } from "@/features/experiments/ComparisonPage";
 import { EvaluationDetailPage } from "@/features/experiments/EvaluationDetailPage";
 import { ExperimentListPage } from "@/features/experiments/ExperimentListPage";
 import { ExperimentPreparationPage } from "@/features/experiments/ExperimentPreparationPage";
@@ -9,6 +10,7 @@ import { createExperimentFromBrief } from "@/features/experiments/services/creat
 import { fixExperimentConditions } from "@/features/experiments/services/fix-experiment-conditions-service";
 import { getEvaluationDetail } from "@/features/experiments/services/get-evaluation-detail-service";
 import { getExperimentBriefing } from "@/features/experiments/services/get-experiment-briefing-service";
+import { getExperimentComparison } from "@/features/experiments/services/get-experiment-comparison-service";
 import { getExperimentPreparation } from "@/features/experiments/services/get-experiment-preparation-service";
 import { getExperimentWorkspace } from "@/features/experiments/services/get-experiment-workspace-service";
 import { getRunDetail } from "@/features/experiments/services/get-run-detail-service";
@@ -78,14 +80,10 @@ export default function App() {
   }
 
   if (comparisonMatch) {
-    const runId = new URLSearchParams(window.location.search).get("runId");
     return (
-      <RunEvaluationPage
+      <ComparisonPage
         experimentId={decodeExperimentID(comparisonMatch[1])}
-        getRunDetail={getRunDetail}
-        runId={runId ?? ""}
-        startRunEvaluation={startRunEvaluation}
-        title="実験比較"
+        getExperimentComparison={getExperimentComparison}
       />
     );
   }
