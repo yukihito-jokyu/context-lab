@@ -162,10 +162,22 @@ type ExperimentRunRetry struct {
 	CreatedAt    time.Time
 }
 
+// ExperimentConclusion は確定済み実験結論の安全な不変結果。
+type ExperimentConclusion struct {
+	RequestID                string
+	ExperimentID             string
+	ConclusionID             string
+	Conclusion               string
+	State                    string
+	FinalizedAt              time.Time
+	EvaluationSnapshotDigest string
+}
+
 // ExperimentComparison は同一実験内の評価結果を比較表示する安全な正本。
 type ExperimentComparison struct {
 	Experiment      ExperimentComparisonExperiment
 	Evaluations     []ExperimentComparisonEvaluation
+	Conclusion      *ExperimentConclusion
 	LastConfirmedAt time.Time
 }
 

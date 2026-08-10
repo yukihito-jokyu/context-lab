@@ -14,8 +14,9 @@ import (
 func (s *Store) GetExperimentComparison(ctx context.Context, experimentID string) (domain.ExperimentComparison, bool, error) {
 	var comparison domain.ExperimentComparison
 	var experimentUpdatedAt string
-	err := s.db.QueryRowContext(ctx, `SELECT e.id, c.purpose, c.evaluation_axes, e.updated_at
-		FROM experiments e JOIN experiment_fixed_conditions c ON c.id = e.fixed_condition_id WHERE e.id = ?`, experimentID).Scan(&comparison.Experiment.ID, &comparison.Experiment.Purpose, &comparison.Experiment.EvaluationAxes, &experimentUpdatedAt)
+	var conclusionID, conclusionContent, conclusionState, conclusionFinalizedAt sql.NullString
+	err := s.db.QueryRowContext(ctx, `SELECT e.id, c.purpose, c.evaluation_axes, e.updated_at, x.id, x.conclusion, x.state, x.finalized_at
+		FROM experiments e JOIN experiment_fixed_conditions c ON c.id = e.fixed_condition_id LEFT JOIN experiment_conclusions x ON x.experiment_id = e.id WHERE e.id = ?`, experimentID).Scan(&comparison.Experiment.ID, &comparison.Experiment.Purpose, &comparison.Experiment.EvaluationAxes, &experimentUpdatedAt, &conclusionID, &conclusionContent, &conclusionState, &conclusionFinalizedAt)
 	if err == sql.ErrNoRows {
 		return domain.ExperimentComparison{}, false, nil
 	}
@@ -25,6 +26,16 @@ func (s *Store) GetExperimentComparison(ctx context.Context, experimentID string
 	comparison.LastConfirmedAt, err = time.Parse(time.RFC3339Nano, experimentUpdatedAt)
 	if err != nil {
 		return domain.ExperimentComparison{}, false, fmt.Errorf("parse comparison experiment update time: %w", err)
+	}
+	if conclusionID.Valid {
+		finalizedAt, parseErr := time.Parse(time.RFC3339Nano, conclusionFinalizedAt.String)
+		if parseErr != nil {
+			return domain.ExperimentComparison{}, false, fmt.Errorf("parse comparison conclusion time: %w", parseErr)
+		}
+		comparison.Conclusion = &domain.ExperimentConclusion{ExperimentID: experimentID, ConclusionID: conclusionID.String, Conclusion: conclusionContent.String, State: conclusionState.String, FinalizedAt: finalizedAt}
+		if finalizedAt.After(comparison.LastConfirmedAt) {
+			comparison.LastConfirmedAt = finalizedAt
+		}
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT e.id, e.run_id, e.state, r.summary, COALESCE(e.result_status, 'notRecorded'), e.summary, COALESCE(e.result_reason_code, ''), COALESCE(e.reconciliation_state, 'confirmed'), e.last_observed_at, e.updated_at FROM experiment_evaluations e JOIN experiment_runs r ON r.id = e.run_id WHERE e.experiment_id = ? ORDER BY e.created_at, e.id`, experimentID)
 	if err != nil {

@@ -11,7 +11,9 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { FinalizeExperimentConclusionPanel } from "./FinalizeExperimentConclusionPanel";
 import { formatExperimentDateTime } from "./lib/format-experiment-date-time";
+import type { FinalizeExperimentConclusionService } from "./services/finalize-experiment-conclusion-service";
 import type {
   ExperimentComparison,
   GetExperimentComparisonService,
@@ -19,9 +21,11 @@ import type {
 
 export function ComparisonPage({
   experimentId,
+  finalizeExperimentConclusion,
   getExperimentComparison,
 }: {
   experimentId: string;
+  finalizeExperimentConclusion: FinalizeExperimentConclusionService;
   getExperimentComparison: GetExperimentComparisonService;
 }) {
   const [comparison, setComparison] = useState<ExperimentComparison>();
@@ -159,6 +163,14 @@ export function ComparisonPage({
                   </Card>
                 ))}
               </section>
+            )}
+            {(comparison.evaluations.length > 0 || comparison.conclusion) && (
+              <FinalizeExperimentConclusionPanel
+                existingConclusion={comparison.conclusion}
+                experimentId={experimentId}
+                finalizeExperimentConclusion={finalizeExperimentConclusion}
+                onReload={load}
+              />
             )}
           </>
         )}

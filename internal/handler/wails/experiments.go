@@ -181,7 +181,16 @@ type GetExperimentComparisonResponse struct {
 type GetExperimentComparisonData struct {
 	Experiment      ExperimentComparisonExperimentData   `json:"experiment"`
 	Evaluations     []ExperimentComparisonEvaluationData `json:"evaluations"`
+	Conclusion      *ExperimentConclusionData            `json:"conclusion,omitempty"`
 	LastConfirmedAt time.Time                            `json:"lastConfirmedAt"`
+}
+
+// ExperimentConclusionData は比較画面へ再表示する確定済み結論。
+type ExperimentConclusionData struct {
+	ID          string    `json:"id"`
+	Content     string    `json:"content"`
+	State       string    `json:"state"`
+	FinalizedAt time.Time `json:"finalizedAt"`
 }
 
 type ExperimentComparisonExperimentData struct {
@@ -255,6 +264,9 @@ func (h *ExperimentComparisonsHandler) GetExperimentComparison(experimentID stri
 		},
 		Evaluations:     evaluations,
 		LastConfirmedAt: comparison.LastConfirmedAt.UTC(),
+	}
+	if comparison.Conclusion != nil {
+		data.Conclusion = &ExperimentConclusionData{ID: comparison.Conclusion.ConclusionID, Content: comparison.Conclusion.Conclusion, State: comparison.Conclusion.State, FinalizedAt: comparison.Conclusion.FinalizedAt.UTC()}
 	}
 	return GetExperimentComparisonResponse{Data: &data}
 }
@@ -667,6 +679,72 @@ type ExperimentRunsHandler struct {
 type ExperimentRunRetriesHandler struct {
 	retryEndedRun *usecase.RetryEndedRun
 	logger        logger.Logger
+}
+
+// FinalizeExperimentConclusionRequest は実験結論確定commandの画面入力。
+type FinalizeExperimentConclusionRequest struct {
+	RequestID    string `json:"requestId"`
+	ExperimentID string `json:"experimentId"`
+	Conclusion   string `json:"conclusion"`
+}
+
+// FinalizeExperimentConclusionResponse は実験結論確定の成功または失敗結果。
+type FinalizeExperimentConclusionResponse struct {
+	Data  *FinalizeExperimentConclusionData `json:"data,omitempty"`
+	Error *ErrorResponse                    `json:"error,omitempty"`
+}
+
+// FinalizeExperimentConclusionData は確定済み結論の安全な画面DTO。
+type FinalizeExperimentConclusionData struct {
+	RequestID    string    `json:"requestId"`
+	ExperimentID string    `json:"experimentId"`
+	ConclusionID string    `json:"conclusionId"`
+	Conclusion   string    `json:"conclusion"`
+	State        string    `json:"state"`
+	FinalizedAt  time.Time `json:"finalizedAt"`
+}
+
+// FinalizeExperimentConclusionsHandler は実験結論確定commandのWails binding。
+type FinalizeExperimentConclusionsHandler struct {
+	finalizeExperimentConclusion *usecase.FinalizeExperimentConclusion
+	logger                       logger.Logger
+}
+
+// NewFinalizeExperimentConclusionsHandler は実験結論確定bindingを生成する。
+func NewFinalizeExperimentConclusionsHandler(finalizer *usecase.FinalizeExperimentConclusion, appLogger logger.Logger) *FinalizeExperimentConclusionsHandler {
+	return &FinalizeExperimentConclusionsHandler{finalizeExperimentConclusion: finalizer, logger: appLogger}
+}
+
+// FinalizeExperimentConclusion は評価済み実験の結論を確定する。
+func (h *FinalizeExperimentConclusionsHandler) FinalizeExperimentConclusion(request FinalizeExperimentConclusionRequest) FinalizeExperimentConclusionResponse {
+	ctx := context.Background()
+	h.logger.Info(ctx, "finalize experiment conclusion called")
+	if h.finalizeExperimentConclusion == nil {
+		response := failFinalizeExperimentConclusion(apperr.New(apperr.CodeExperimentConclusionUnavailable))
+		h.logger.ErrorCode(ctx, "finalize experiment conclusion failed", response.Error.Code, slog.String("operation", "finalize_experiment_conclusion"))
+
+		return response
+	}
+	conclusion, err := h.finalizeExperimentConclusion.Execute(ctx, request.RequestID, request.ExperimentID, request.Conclusion)
+	if err != nil {
+		response := failFinalizeExperimentConclusion(err)
+		h.logger.ErrorCode(ctx, "finalize experiment conclusion failed", response.Error.Code, slog.String("operation", "finalize_experiment_conclusion"))
+
+		return response
+	}
+	data := FinalizeExperimentConclusionData{RequestID: conclusion.RequestID, ExperimentID: conclusion.ExperimentID, ConclusionID: conclusion.ConclusionID, Conclusion: conclusion.Conclusion, State: conclusion.State, FinalizedAt: conclusion.FinalizedAt.UTC()}
+
+	return FinalizeExperimentConclusionResponse{Data: &data}
+}
+
+// failFinalizeExperimentConclusion は内部エラーを安全な結論確定エラーへ変換する。
+func failFinalizeExperimentConclusion(err error) FinalizeExperimentConclusionResponse {
+	appErr := apperr.As(err)
+	if appErr == nil {
+		appErr = apperr.NewUnexpected(err)
+	}
+
+	return FinalizeExperimentConclusionResponse{Error: &ErrorResponse{Code: string(appErr.Code), Message: appErr.Error()}}
 }
 
 // NewExperimentRunRetriesHandler は終了run再実行用作成bindingを生成する。

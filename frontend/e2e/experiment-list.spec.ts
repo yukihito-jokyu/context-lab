@@ -25,6 +25,10 @@ type RetryEndedRunResponse = Record<string, unknown> & {
   result?: Record<string, unknown>;
 };
 type GetExperimentComparisonResponse = Record<string, unknown>;
+type FinalizeExperimentConclusionResponse = Record<string, unknown> & {
+  delayMs?: number;
+  result?: Record<string, unknown>;
+};
 type ListPreparationsResponse = Record<string, unknown>;
 
 declare global {
@@ -62,6 +66,11 @@ declare global {
     __startRunEvaluationRequests: Array<{
       requestId: string;
       runId: string;
+    }>;
+    __finalizeExperimentConclusionRequests: Array<{
+      requestId: string;
+      experimentId: string;
+      conclusion: string;
     }>;
   }
 }
@@ -329,6 +338,33 @@ async function installComparisonMock(
 ) {
   await page.addInitScript({
     content: `const r=${JSON.stringify(responses)};let i=0;window.go=window.go||{wails:{}};window.go.wails.ExperimentComparisonsHandler={GetExperimentComparison:()=>Promise.resolve(r[Math.min(i++,r.length-1)])};`,
+  });
+}
+
+async function installFinalizeExperimentConclusionMock(
+  page: Page,
+  responses: FinalizeExperimentConclusionResponse[],
+) {
+  await page.addInitScript({
+    content: `
+      const responses = ${JSON.stringify(responses)};
+      let callCount = 0;
+      window.go = window.go || { wails: {} };
+      window.__finalizeExperimentConclusionRequests = [];
+      window.go.wails.FinalizeExperimentConclusionsHandler = {
+        FinalizeExperimentConclusion: (request) => {
+          window.__finalizeExperimentConclusionRequests.push(request);
+          const response = responses[Math.min(callCount, responses.length - 1)];
+          callCount += 1;
+          if (response.delayMs) {
+            return new Promise((resolve) => {
+              window.setTimeout(() => resolve(response.result), response.delayMs);
+            });
+          }
+          return Promise.resolve(response);
+        },
+      };
+    `,
   });
 }
 
@@ -1558,6 +1594,94 @@ test("実験比較は根拠、空、照合、失敗再読込と詳細導線を�
   await expect(page.locator("#comparison-error")).toContainText("失敗");
   await page.locator("#reload-comparison-button").click();
   await expect(page.locator("#empty-comparison")).toBeVisible();
+});
+
+test("比較結果から結論を確定し、失敗再試行と永続済み結論を確認する", async ({
+  page,
+}) => {
+  const base = {
+    experiment: {
+      id: "EXP-19",
+      purpose: "結論の比較",
+      evaluationAxes: "正確性",
+    },
+    evaluations: [
+      {
+        evaluationId: "eval-19",
+        runId: "run-19",
+        state: "completed",
+        runSummary: "比較の根拠",
+        result: { status: "complete", summary: "比較結果" },
+        reconciliation: { state: "confirmed", lastObservedAt: confirmedAt },
+        updatedAt: confirmedAt,
+      },
+    ],
+    lastConfirmedAt: confirmedAt,
+  };
+  await installComparisonMock(page, [
+    { data: base },
+    { data: base },
+    {
+      data: {
+        ...base,
+        conclusion: {
+          id: "conclusion-19",
+          content: "永続済みの結論",
+          state: "finalized",
+          finalizedAt: confirmedAt,
+        },
+      },
+    },
+  ]);
+  await installFinalizeExperimentConclusionMock(page, [
+    { error: { code: "UNAVAILABLE", message: "一時的に確定できません" } },
+    {
+      delayMs: 100,
+      result: {
+        data: {
+          requestId: "ignored-by-ui",
+          experimentId: "EXP-19",
+          conclusionId: "conclusion-19",
+          conclusion: "画面から確定した結論",
+          state: "finalized",
+          finalizedAt: confirmedAt,
+        },
+      },
+    },
+  ]);
+
+  await page.goto("/experiments/EXP-19/comparison");
+  const finalize = page.locator("#finalize-experiment-conclusion-button");
+  await expect(finalize).toBeDisabled();
+  await page.locator("#experiment-conclusion").fill("画面から確定した結論");
+  await finalize.click();
+  await expect(page.locator("#experiment-conclusion-error")).toContainText(
+    "一時的に確定できません",
+  );
+  await finalize.click();
+  await expect(finalize).toBeDisabled();
+  await expect(page.locator("#experiment-conclusion-finalized")).toContainText(
+    "永続済みの結論",
+  );
+  const requestIDs = await page.evaluate(() =>
+    window.__finalizeExperimentConclusionRequests.map(
+      (request) => request.requestId,
+    ),
+  );
+  expect(requestIDs).toHaveLength(2);
+  expect(requestIDs[0]).toBe(requestIDs[1]);
+  await expect(page.getByRole("link", { name: "派生を確認" })).toHaveAttribute(
+    "href",
+    "/experiments/EXP-19/derivations",
+  );
+  await expect(page.getByRole("link", { name: "知見を確認" })).toHaveAttribute(
+    "href",
+    "/experiments/EXP-19/insights",
+  );
+  await page.locator("#reload-finalized-experiment-conclusion-button").click();
+  await expect(page.locator("#experiment-conclusion-finalized")).toContainText(
+    "永続済みの結論",
+  );
 });
 
 test("評価詳細は不能理由を表示し、取得失敗後に再読込できる", async ({

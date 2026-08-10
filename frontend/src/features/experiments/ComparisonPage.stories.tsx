@@ -22,7 +22,19 @@ const data = {
 const meta = {
   component: ComparisonPage,
   title: "Features/Experiments/ComparisonPage",
-  args: { experimentId: "EXP-18" },
+  args: {
+    experimentId: "EXP-18",
+    finalizeExperimentConclusion: async () => ({
+      data: {
+        requestId: "request-18",
+        experimentId: "EXP-18",
+        conclusionId: "conclusion-18",
+        conclusion: "結論",
+        state: "finalized",
+        finalizedAt: "2026-08-10T10:00:00Z",
+      },
+    }),
+  },
 } satisfies Meta<typeof ComparisonPage>;
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -50,6 +62,21 @@ export const Reconciling: Story = {
             },
           },
         ],
+      },
+    }),
+  },
+};
+export const Finalized: Story = {
+  args: {
+    getExperimentComparison: async () => ({
+      data: {
+        ...data,
+        conclusion: {
+          conclusionId: "conclusion-18",
+          conclusion: "比較の結果、条件Aを採用します。",
+          state: "finalized",
+          finalizedAt: data.lastConfirmedAt,
+        },
       },
     }),
   },
