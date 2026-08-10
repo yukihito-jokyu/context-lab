@@ -27,7 +27,12 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {
-  args: { listPreparations: async () => ({ data }) },
+  args: {
+    listPreparations: async () => ({ data }),
+    startPreparation: async () => ({
+      data: { preparationId: "PREP-013", state: "completed" },
+    }),
+  },
   play: async ({ canvasElement }) => {
     await expect(
       await within(canvasElement).findByRole("heading", { name: "PREP-012" }),
@@ -36,13 +41,21 @@ export const Default: Story = {
 };
 
 export const Loading: Story = {
-  args: { listPreparations: () => new Promise(() => {}) },
+  args: {
+    listPreparations: () => new Promise(() => {}),
+    startPreparation: async () => ({
+      data: { preparationId: "PREP-013", state: "completed" },
+    }),
+  },
 };
 
 export const Empty: Story = {
   args: {
     listPreparations: async () => ({
       data: { preparations: [] },
+    }),
+    startPreparation: async () => ({
+      data: { preparationId: "PREP-013", state: "completed" },
     }),
   },
 };
@@ -55,12 +68,18 @@ export const LoadError: Story = {
         message: "準備session一覧を取得できませんでした。",
       },
     }),
+    startPreparation: async () => ({
+      data: { preparationId: "PREP-013", state: "completed" },
+    }),
   },
 };
 
 export const Reload: Story = {
   args: {
     listPreparations: fn(async () => ({ data })),
+    startPreparation: async () => ({
+      data: { preparationId: "PREP-013", state: "completed" },
+    }),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);

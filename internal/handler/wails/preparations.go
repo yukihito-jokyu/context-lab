@@ -36,6 +36,18 @@ type GetPreparationResponse struct {
 	Error *ErrorResponse      `json:"error,omitempty"`
 }
 
+// StartPreparationResponse は環境準備開始commandの成功または失敗結果。
+type StartPreparationResponse struct {
+	Data  *StartPreparationData `json:"data,omitempty"`
+	Error *ErrorResponse        `json:"error,omitempty"`
+}
+
+// StartPreparationData は画面へ返す環境準備開始結果。
+type StartPreparationData struct {
+	PreparationID string `json:"preparationId"`
+	State         string `json:"state"`
+}
+
 // GetPreparationData は画面へ返す環境準備session詳細。
 type GetPreparationData struct {
 	PreparationID  string                            `json:"preparationId"`
@@ -80,12 +92,18 @@ type PreparationReconciliationResponse struct {
 type PreparationsHandler struct {
 	listPreparations *usecase.ListPreparations
 	getPreparation   *usecase.GetPreparation
+	startPreparation *usecase.StartPreparation
 	logger           logger.Logger
 }
 
 // NewPreparationsHandler は環境準備queryのWails bindingを生成。
 func NewPreparationsHandler(listPreparations *usecase.ListPreparations, getPreparation *usecase.GetPreparation, appLogger logger.Logger) *PreparationsHandler {
 	return &PreparationsHandler{listPreparations: listPreparations, getPreparation: getPreparation, logger: appLogger}
+}
+
+// NewPreparationsHandlerWithStart は環境準備commandを含むWails bindingを生成する。
+func NewPreparationsHandlerWithStart(listPreparations *usecase.ListPreparations, getPreparation *usecase.GetPreparation, startPreparation *usecase.StartPreparation, appLogger logger.Logger) *PreparationsHandler {
+	return &PreparationsHandler{listPreparations: listPreparations, getPreparation: getPreparation, startPreparation: startPreparation, logger: appLogger}
 }
 
 // ListPreparations は環境準備session一覧を画面向けDTOで返す。
@@ -123,6 +141,22 @@ func (h *PreparationsHandler) GetPreparation(preparationID string) GetPreparatio
 	return GetPreparationResponse{Data: &data}
 }
 
+// StartPreparation は環境準備開始を画面向けDTOで返す。
+func (h *PreparationsHandler) StartPreparation(requestID string, scope string) StartPreparationResponse {
+	ctx := context.Background()
+	h.logger.Info(ctx, "start preparation called")
+	if h.startPreparation == nil {
+		return h.failStartPreparation(ctx, apperr.New(apperr.CodePreparationStartUnavailable))
+	}
+
+	start, err := h.startPreparation.Execute(ctx, requestID, scope)
+	if err != nil {
+		return h.failStartPreparation(ctx, err)
+	}
+
+	return StartPreparationResponse{Data: &StartPreparationData{PreparationID: start.PreparationID, State: start.State}}
+}
+
 // failListPreparations は内部エラーを安全な画面エラーへ変換。
 func failListPreparations(err error) ListPreparationsResponse {
 	appErr := apperr.As(err)
@@ -141,6 +175,18 @@ func failGetPreparation(err error) GetPreparationResponse {
 	}
 
 	return GetPreparationResponse{Error: &ErrorResponse{Code: string(appErr.Code), Message: appErr.Error()}}
+}
+
+// failStartPreparation は開始エラーを安全な画面DTOへ変換して記録する。
+func (h *PreparationsHandler) failStartPreparation(ctx context.Context, err error) StartPreparationResponse {
+	appErr := apperr.As(err)
+	if appErr == nil {
+		appErr = apperr.NewUnexpected(err)
+	}
+	response := StartPreparationResponse{Error: &ErrorResponse{Code: string(appErr.Code), Message: appErr.Error()}}
+	h.logger.ErrorCode(ctx, "start preparation failed", response.Error.Code, slog.String("operation", "start_preparation"))
+
+	return response
 }
 
 // toListPreparationsData はdomain環境準備sessionを画面DTOへ変換。
