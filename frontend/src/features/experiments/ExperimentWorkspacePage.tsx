@@ -25,11 +25,13 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { formatExperimentDateTime } from "./lib/format-experiment-date-time";
+import { RetryEndedRunPanel } from "./RetryEndedRunPanel";
 import { RunEvaluationStartPanel } from "./RunEvaluationStartPanel";
 import type {
   ExperimentWorkspace,
   GetExperimentWorkspaceService,
 } from "./services/get-experiment-workspace-service";
+import type { RetryEndedRunService } from "./services/retry-ended-run-service";
 import type {
   StartExperimentService,
   StartedExperiment,
@@ -44,6 +46,7 @@ type ExperimentWorkspacePageProps = {
   getExperimentWorkspace: GetExperimentWorkspaceService;
   startExperiment: StartExperimentService;
   startRunEvaluation: StartRunEvaluationService;
+  retryEndedRun: RetryEndedRunService;
 };
 
 type WorkspaceWorkItem = {
@@ -203,6 +206,7 @@ export function ExperimentWorkspacePage({
   getExperimentWorkspace,
   startExperiment,
   startRunEvaluation,
+  retryEndedRun,
 }: ExperimentWorkspacePageProps) {
   const [workspace, setWorkspace] = useState<ExperimentWorkspace>();
   const [isLoading, setIsLoading] = useState(true);
@@ -404,24 +408,41 @@ export function ExperimentWorkspacePage({
                 emptyTitle="runはまだありません"
                 items={workspace.runs}
                 renderItemAction={(run) => (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button
-                      onClick={() =>
-                        window.location.assign(
-                          `/experiments/${encodeURIComponent(experimentId)}/runs/${encodeURIComponent(run.id)}`,
-                        )
-                      }
-                      type="button"
-                      variant="outline"
-                    >
-                      詳細を確認
-                    </Button>
-                    <RunEvaluationStartPanel
-                      onStarted={onRunEvaluationStarted}
-                      runId={run.id}
-                      runState={run.state}
-                      startRunEvaluation={startRunEvaluation}
-                    />
+                  <div className="mt-3 space-y-2">
+                    {run.retryOfRunId && (
+                      <p className="text-sm text-muted-foreground">
+                        元run: {run.retryOfRunId} の再実行
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        onClick={() =>
+                          window.location.assign(
+                            `/experiments/${encodeURIComponent(experimentId)}/runs/${encodeURIComponent(run.id)}`,
+                          )
+                        }
+                        type="button"
+                        variant="outline"
+                      >
+                        詳細を確認
+                      </Button>
+                      <RunEvaluationStartPanel
+                        onStarted={onRunEvaluationStarted}
+                        runId={run.id}
+                        runState={run.state}
+                        startRunEvaluation={startRunEvaluation}
+                      />
+                      {run.state === "failed" && (
+                        <RetryEndedRunPanel
+                          experimentId={experimentId}
+                          fixedConditionId={
+                            workspace.fixedConditions.fixedConditionId
+                          }
+                          retryEndedRun={retryEndedRun}
+                          runId={run.id}
+                        />
+                      )}
+                    </div>
                   </div>
                 )}
                 title="実行"
