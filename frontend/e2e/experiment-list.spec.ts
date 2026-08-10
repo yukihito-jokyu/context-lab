@@ -6,6 +6,7 @@ type GetExperimentBriefingResponse = Record<string, unknown>;
 type SendExperimentBriefMessageResponse = Record<string, unknown>;
 type CreateExperimentFromBriefResponse = Record<string, unknown>;
 type StopExperimentBriefingResponse = Record<string, unknown>;
+type GetExperimentPreparationResponse = Record<string, unknown>;
 
 declare global {
   interface Window {
@@ -79,6 +80,31 @@ async function installListExperimentsMock(
         callCount += 1;
         return Promise.resolve(response);
       } } } };
+    `,
+  });
+}
+
+async function installExperimentPreparationMock(
+  page: Page,
+  responses: GetExperimentPreparationResponse[],
+) {
+  await page.addInitScript({
+    content: `
+      const responses = ${JSON.stringify(responses)};
+      let callCount = 0;
+      window.go = window.go || { wails: {} };
+      window.go.wails.ExperimentPreparationsHandler = {
+        GetExperimentPreparation: () => {
+          const response = responses[Math.min(callCount, responses.length - 1)];
+          callCount += 1;
+          if (response.delayMs) {
+            return new Promise((resolve) => {
+              window.setTimeout(() => resolve(response.result), response.delayMs);
+            });
+          }
+          return Promise.resolve(response);
+        }
+      };
     `,
   });
 }
@@ -644,4 +670,89 @@ test("採用操作の二重実行を抑止する", async ({ page }) => {
   await expect
     .poll(() => page.evaluate(() => window.__createExperimentRequests.length))
     .toBe(1);
+});
+
+test("実験準備の入力内容を表示する", async ({ page }) => {
+  await installExperimentPreparationMock(page, [
+    {
+      data: {
+        experimentId: "EXP-015",
+        state: "preparing",
+        purpose: "問い合わせ要約の品質を比較する",
+        hypothesis: "根拠を保つpromptが正確性を高める",
+        environmentConditions: "同じ入力と評価手順を用いる",
+        initialInput: "顧客問い合わせ本文",
+        prompts: [
+          { sequenceNo: 1, content: "短く要約する" },
+          { sequenceNo: 2, content: "根拠を保って要約する" },
+        ],
+        evaluationAxes: "正確性、要点保持",
+        source: { state: "adopted", versionId: "brief-v1" },
+        requiredFields: {
+          purpose: true,
+          environmentConditions: true,
+          initialInput: true,
+          prompts: true,
+          evaluationAxes: true,
+        },
+        lastConfirmedAt: confirmedAt,
+      },
+    },
+  ]);
+  await page.goto("/experiments/EXP-015/preparation");
+
+  await expect(
+    page.getByRole("heading", { name: "実験の条件を準備する" }),
+  ).toBeVisible();
+  await expect(page.getByText("根拠を保って要約する")).toBeVisible();
+  await expect(page.getByText("入力済み")).toHaveCount(5);
+});
+
+test("実験準備の読込中と空状態を表示する", async ({ page }) => {
+  await installExperimentPreparationMock(page, [
+    {
+      delayMs: 200,
+      result: {},
+    },
+  ]);
+  await page.goto("/experiments/EXP-015/preparation");
+
+  await expect(page.locator("#preparation-loading")).toBeVisible();
+  await expect(page.locator("#preparation-empty")).toBeVisible();
+});
+
+test("実験準備の取得失敗から再読込する", async ({ page }) => {
+  await installExperimentPreparationMock(page, [
+    {
+      error: {
+        code: "EXPERIMENT_PREPARATION_NOT_FOUND",
+        message: "実験準備が見つかりません",
+      },
+    },
+    {
+      data: {
+        experimentId: "EXP-015",
+        state: "preparing",
+        purpose: "問い合わせ要約の品質を比較する",
+        environmentConditions: "同じ入力と評価手順を用いる",
+        initialInput: "顧客問い合わせ本文",
+        prompts: [],
+        evaluationAxes: "正確性、要点保持",
+        source: { state: "adopted", versionId: "brief-v1" },
+        requiredFields: {
+          purpose: true,
+          environmentConditions: true,
+          initialInput: true,
+          prompts: false,
+          evaluationAxes: true,
+        },
+        lastConfirmedAt: confirmedAt,
+      },
+    },
+  ]);
+  await page.goto("/experiments/EXP-015/preparation");
+
+  await expect(page.getByText("対象の実験は見つかりません")).toBeVisible();
+  await page.getByRole("button", { name: "再読込" }).click();
+  await expect(page.getByText("問い合わせ要約の品質を比較する")).toBeVisible();
 });
