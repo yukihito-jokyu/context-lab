@@ -49,6 +49,7 @@ func main() {
 	experimentPreparationsHandler := wailshandler.NewExperimentPreparationsHandler(
 		usecase.NewGetExperimentPreparation(store),
 		appLogger,
+		usecase.NewSaveExperimentPreparationDraft(store),
 	)
 	preparationsHandler := wailshandler.NewPreparationsHandler(usecase.NewListPreparations(store), appLogger)
 	briefingAdapter := acp.NewCodexBriefingAdapter(filepath.Join(configDirectory, applicationDirectoryName))

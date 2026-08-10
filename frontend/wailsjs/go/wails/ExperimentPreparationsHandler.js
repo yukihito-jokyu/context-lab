@@ -5,3 +5,7 @@
 export function GetExperimentPreparation(arg1) {
   return window['go']['wails']['ExperimentPreparationsHandler']['GetExperimentPreparation'](arg1);
 }
+
+export function SaveExperimentPreparationDraft(arg1) {
+  return window['go']['wails']['ExperimentPreparationsHandler']['SaveExperimentPreparationDraft'](arg1);
+}
