@@ -5,6 +5,7 @@ type message string
 
 const (
 	CodeExperimentsLoadFailed            Code = "EXPERIMENTS_UNAVAILABLE"
+	CodePreparationsLoadFailed           Code = "PREPARATIONS_UNAVAILABLE"
 	CodeBriefingRequestInvalid           Code = "INVALID_REQUEST"
 	CodeACPNotReady                      Code = "ACP_NOT_READY"
 	CodeBriefingStartFailed              Code = "EXPERIMENT_BRIEFING_START_UNAVAILABLE"
@@ -30,6 +31,7 @@ const (
 
 var defaultMessages = map[Code]message{
 	CodeExperimentsLoadFailed:            "実験一覧を取得できませんでした",
+	CodePreparationsLoadFailed:           "準備session一覧を取得できませんでした",
 	CodeBriefingRequestInvalid:           "開始要求が不正です",
 	CodeACPNotReady:                      "実験ブリーフを開始する準備ができていません",
 	CodeBriefingStartFailed:              "実験ブリーフを開始できませんでした",

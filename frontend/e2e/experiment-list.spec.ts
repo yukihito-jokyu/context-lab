@@ -7,6 +7,7 @@ type SendExperimentBriefMessageResponse = Record<string, unknown>;
 type CreateExperimentFromBriefResponse = Record<string, unknown>;
 type StopExperimentBriefingResponse = Record<string, unknown>;
 type GetExperimentPreparationResponse = Record<string, unknown>;
+type ListPreparationsResponse = Record<string, unknown>;
 
 declare global {
   interface Window {
@@ -102,6 +103,26 @@ async function installExperimentPreparationMock(
               window.setTimeout(() => resolve(response.result), response.delayMs);
             });
           }
+          return Promise.resolve(response);
+        }
+      };
+    `,
+  });
+}
+
+async function installListPreparationsMock(
+  page: Page,
+  responses: ListPreparationsResponse[],
+) {
+  await page.addInitScript({
+    content: `
+      const responses = ${JSON.stringify(responses)};
+      let callCount = 0;
+      window.go = window.go || { wails: {} };
+      window.go.wails.PreparationsHandler = {
+        ListPreparations: () => {
+          const response = responses[Math.min(callCount, responses.length - 1)];
+          callCount += 1;
           return Promise.resolve(response);
         }
       };
@@ -755,4 +776,62 @@ test("実験準備の取得失敗から再読込する", async ({ page }) => {
   await expect(page.getByText("対象の実験は見つかりません")).toBeVisible();
   await page.getByRole("button", { name: "再読込" }).click();
   await expect(page.getByText("問い合わせ要約の品質を比較する")).toBeVisible();
+});
+
+test("環境準備session一覧を表示する", async ({ page }) => {
+  await installListPreparationsMock(page, [
+    {
+      data: {
+        preparations: [
+          {
+            preparationId: "PREP-001",
+            state: "running",
+            startedAt: confirmedAt,
+            lastObservedAt: confirmedAt,
+          },
+        ],
+      },
+    },
+  ]);
+  await page.goto("/preparations");
+
+  await expect(page.getByRole("heading", { name: "環境準備" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "PREP-001" })).toBeVisible();
+  await expect(page.getByText("running")).toBeVisible();
+});
+
+test("環境準備sessionの空状態を表示する", async ({ page }) => {
+  await installListPreparationsMock(page, [{ data: { preparations: [] } }]);
+  await page.goto("/preparations");
+
+  await expect(page.locator("#preparation-list-empty")).toBeVisible();
+  await expect(page.getByRole("button", { name: "再読込" })).toBeVisible();
+});
+
+test("環境準備session一覧の失敗から再読込する", async ({ page }) => {
+  await installListPreparationsMock(page, [
+    {
+      error: {
+        code: "PREPARATIONS_UNAVAILABLE",
+        message: "準備session一覧を取得できませんでした",
+      },
+    },
+    {
+      data: {
+        preparations: [
+          {
+            preparationId: "PREP-002",
+            state: "completed",
+            startedAt: confirmedAt,
+            lastObservedAt: confirmedAt,
+          },
+        ],
+      },
+    },
+  ]);
+  await page.goto("/preparations");
+
+  await expect(page.locator("#preparation-query-error")).toBeVisible();
+  await page.getByRole("button", { name: "再読込" }).click();
+  await expect(page.getByRole("heading", { name: "PREP-002" })).toBeVisible();
 });
