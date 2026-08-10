@@ -1972,6 +1972,224 @@ export namespace wails {
 		    return a;
 		}
 	}
+	export class PreparationReconciliationResponse {
+	    state: string;
+	    // Go type: time
+	    lastObservedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new PreparationReconciliationResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.state = source["state"];
+	        this.lastObservedAt = this.convertValues(source["lastObservedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class PreparationFailureResponse {
+	    code: string;
+	    // Go type: time
+	    occurredAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new PreparationFailureResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.code = source["code"];
+	        this.occurredAt = this.convertValues(source["occurredAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class PreparationDiagnosticResponse {
+	    id: string;
+	    code: string;
+	    summary: string;
+	    // Go type: time
+	    occurredAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new PreparationDiagnosticResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.code = source["code"];
+	        this.summary = source["summary"];
+	        this.occurredAt = this.convertValues(source["occurredAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class PreparationCandidateResponse {
+	    id: string;
+	    environmentConditions: string;
+	    summary: string;
+	    // Go type: time
+	    createdAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new PreparationCandidateResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.environmentConditions = source["environmentConditions"];
+	        this.summary = source["summary"];
+	        this.createdAt = this.convertValues(source["createdAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class GetPreparationData {
+	    preparationId: string;
+	    state: string;
+	    // Go type: time
+	    startedAt: any;
+	    // Go type: time
+	    lastObservedAt: any;
+	    candidates: PreparationCandidateResponse[];
+	    diagnostics: PreparationDiagnosticResponse[];
+	    failure?: PreparationFailureResponse;
+	    reconciliation: PreparationReconciliationResponse;
+	
+	    static createFrom(source: any = {}) {
+	        return new GetPreparationData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.preparationId = source["preparationId"];
+	        this.state = source["state"];
+	        this.startedAt = this.convertValues(source["startedAt"], null);
+	        this.lastObservedAt = this.convertValues(source["lastObservedAt"], null);
+	        this.candidates = this.convertValues(source["candidates"], PreparationCandidateResponse);
+	        this.diagnostics = this.convertValues(source["diagnostics"], PreparationDiagnosticResponse);
+	        this.failure = this.convertValues(source["failure"], PreparationFailureResponse);
+	        this.reconciliation = this.convertValues(source["reconciliation"], PreparationReconciliationResponse);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class GetPreparationResponse {
+	    data?: GetPreparationData;
+	    error?: ErrorResponse;
+	
+	    static createFrom(source: any = {}) {
+	        return new GetPreparationResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.data = this.convertValues(source["data"], GetPreparationData);
+	        this.error = this.convertValues(source["error"], ErrorResponse);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class RunDetailReconciliationData {
 	    state: string;
 	    // Go type: time
@@ -2467,6 +2685,10 @@ export namespace wails {
 		    return a;
 		}
 	}
+	
+	
+	
+	
 	
 	
 	export class RetryEndedRunData {

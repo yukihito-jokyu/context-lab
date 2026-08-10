@@ -37,6 +37,7 @@ type Store struct {
 	beginBriefingTransaction     func(context.Context) (briefingTransaction, error)
 	failBriefingMessageOperation func(context.Context, string, string) (sql.Result, error)
 	listPreparations             func(context.Context) (preparationRows, error)
+	getPreparation               func(context.Context, string) (domain.PreparationDetail, bool, error)
 	briefingMessageMu            sync.Mutex
 	derivationBriefingMessageMu  sync.Mutex
 	listMu                       sync.Mutex
@@ -73,6 +74,9 @@ func Open(dataDirectory string) (*Store, error) {
 			}
 
 			return sqlitePreparationRows{rows: rows}, nil
+		},
+		getPreparation: func(ctx context.Context, preparationID string) (domain.PreparationDetail, bool, error) {
+			return getPreparation(ctx, sqlitePreparationQueryer{db: db}, preparationID)
 		},
 	}
 	if err := store.migrate(context.Background()); err != nil {
