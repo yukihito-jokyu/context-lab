@@ -26,6 +26,10 @@ type RetryEndedRunResponse = Record<string, unknown> & {
 };
 type GetExperimentComparisonResponse = Record<string, unknown>;
 type GetDerivationSourceResponse = Record<string, unknown>;
+type CreateDerivedExperimentResponse = Record<string, unknown> & {
+  delayMs?: number;
+  result?: Record<string, unknown>;
+};
 type FinalizeExperimentConclusionResponse = Record<string, unknown> & {
   delayMs?: number;
   result?: Record<string, unknown>;
@@ -49,6 +53,12 @@ declare global {
       requestId: string;
       briefingSessionId: string;
       briefVersionId: string;
+    }>;
+    __createDerivedExperimentRequests: Array<{
+      requestId: string;
+      sourceExperimentId: string;
+      changes: Record<string, unknown>;
+      reason: string;
     }>;
     __draftSaveRequests: Array<{
       requestId: string;
@@ -348,6 +358,33 @@ async function installDerivationSourceMock(
 ) {
   await page.addInitScript({
     content: `const r=${JSON.stringify(responses)};let i=0;window.go=window.go||{wails:{}};window.go.wails.ExperimentDerivationSourcesHandler={GetDerivationSource:()=>Promise.resolve(r[Math.min(i++,r.length-1)])};`,
+  });
+}
+
+async function installCreateDerivedExperimentMock(
+  page: Page,
+  responses: CreateDerivedExperimentResponse[],
+) {
+  await page.addInitScript({
+    content: `
+      const responses = ${JSON.stringify(responses)};
+      let callCount = 0;
+      window.go = window.go || { wails: {} };
+      window.__createDerivedExperimentRequests = [];
+      window.go.wails.CreateDerivedExperimentsHandler = {
+        CreateDerivedExperiment: (request) => {
+          window.__createDerivedExperimentRequests.push(request);
+          const response = responses[Math.min(callCount, responses.length - 1)];
+          callCount += 1;
+          if (response.delayMs) {
+            return new Promise((resolve) => {
+              window.setTimeout(() => resolve(response.result), response.delayMs);
+            });
+          }
+          return Promise.resolve(response);
+        },
+      };
+    `,
   });
 }
 
@@ -1742,13 +1779,13 @@ test("派生の作成元は固定条件・結論・可否を表示し、失敗�
     "条件Aを採用します。",
   );
   await expect(
-    page.getByRole("button", { name: "派生実験を作成" }),
-  ).toBeDisabled();
+    page.getByRole("link", { name: "派生実験を作成" }),
+  ).toHaveAttribute("href", "/experiments/EXP-20/derivations/create");
   await expect(
     page.getByRole("button", { name: "壁打ちを開始" }),
   ).toBeDisabled();
   await expect(page.locator("#derivation-source-eligibility")).toContainText(
-    "次の機能で利用可能になります",
+    "壁打ちは、次の機能で利用可能になります",
   );
 
   await installDerivationSourceMock(page, [{ data: ineligible }]);
@@ -1786,6 +1823,87 @@ test("派生の作成元は固定条件・結論・可否を表示し、失敗�
   await expect(page.locator("#derivation-source-conclusion")).toContainText(
     "条件Aを採用します。",
   );
+});
+
+test("派生実験は差分と理由を検証し、同じ依頼IDで再試行して準備へ遷移する", async ({
+  page,
+}) => {
+  await installCreateDerivedExperimentMock(page, [
+    {
+      error: {
+        code: "DERIVED_EXPERIMENT_UNAVAILABLE",
+        message: "派生実験を作成できませんでした。",
+      },
+    },
+    {
+      delayMs: 200,
+      result: {
+        data: {
+          requestId: "server-request-id",
+          experimentId: "EXP-21-derived",
+          sourceExperimentId: "EXP-21",
+          state: "preparing",
+          createdAt: confirmedAt,
+        },
+      },
+    },
+  ]);
+  await installExperimentPreparationMock(page, [
+    {
+      data: {
+        experimentId: "EXP-21-derived",
+        state: "preparing",
+        purpose: "比較対象の条件を変更する",
+        environmentConditions: "Node.js 22",
+        initialInput: "入力データ",
+        prompts: [{ sequenceNo: 1, content: "比較対象で実行する" }],
+        evaluationAxes: "正確性",
+        source: { state: "derived", versionId: "source-21" },
+        requiredFields: {
+          purpose: true,
+          environmentConditions: true,
+          initialInput: true,
+          prompts: true,
+          evaluationAxes: true,
+        },
+        lastConfirmedAt: confirmedAt,
+      },
+    },
+  ]);
+  await page.goto("/experiments/EXP-21/derivations/create");
+
+  await page.locator("#create-derived-experiment-button").click();
+  await expect(page.locator("#create-derived-experiment-error")).toContainText(
+    "差分を1項目以上入力し、派生する理由を入力してください。",
+  );
+
+  await page.locator("#derived-purpose").fill("比較対象の条件を変更する");
+  await page.locator("#derived-reason").fill("評価結果を踏まえて比較するため");
+  await page.locator("#create-derived-experiment-button").click();
+  await expect(page.locator("#create-derived-experiment-error")).toContainText(
+    "派生実験を作成できませんでした。",
+  );
+
+  await page.locator("#create-derived-experiment-button").click();
+  await expect(
+    page.locator("#create-derived-experiment-button"),
+  ).toBeDisabled();
+  await expect(page.locator("#derived-purpose")).toBeDisabled();
+  await expect(page.locator("#derived-reason")).toBeDisabled();
+  const requests = await page.evaluate(
+    () => window.__createDerivedExperimentRequests,
+  );
+  expect(requests).toHaveLength(2);
+  expect(requests[0].requestId).toBe(requests[1].requestId);
+  expect(requests[0]).toMatchObject({
+    sourceExperimentId: "EXP-21",
+    changes: { Purpose: "比較対象の条件を変更する" },
+    reason: "評価結果を踏まえて比較するため",
+  });
+  await expect(page).toHaveURL("/experiments/EXP-21-derived/preparation");
+  await expect(
+    page.getByRole("heading", { name: "実験の条件を準備する" }),
+  ).toBeVisible();
 });
 
 test("評価詳細は不能理由を表示し、取得失敗後に再読込できる", async ({
