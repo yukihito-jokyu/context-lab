@@ -28,12 +28,26 @@ const derivationSource = {
   eligibility: { canCreateDerivedExperiment: true },
 };
 
+const briefingServices = {
+  startDerivationBriefing: async (
+    _requestId: string,
+    sourceExperimentId: string,
+  ) => ({
+    data: {
+      briefingSessionId: "derivation-briefing-20",
+      operationId: "derivation-operation-20",
+      sourceExperimentId,
+    },
+  }),
+};
+
 const meta = {
   component: DerivationSourcePage,
   title: "Features/Experiments/DerivationSourcePage",
   args: {
     experimentId: "EXP-20",
     getDerivationSource: async () => ({ data: derivationSource }),
+    briefingServices,
   },
 } satisfies Meta<typeof DerivationSourcePage>;
 
@@ -74,5 +88,19 @@ export const LoadFailure: Story = {
         message: "派生の作成元を取得できませんでした。",
       },
     }),
+  },
+};
+
+export const BriefingStartFailure: Story = {
+  args: {
+    briefingServices: {
+      ...briefingServices,
+      startDerivationBriefing: async () => ({
+        error: {
+          code: "DERIVATION_BRIEFING_UNAVAILABLE",
+          message: "壁打ちを開始できませんでした。",
+        },
+      }),
+    },
   },
 };

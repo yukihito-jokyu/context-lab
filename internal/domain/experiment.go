@@ -21,6 +21,16 @@ type ExperimentBriefingStart struct {
 	FailureCode       string
 }
 
+// DerivationBriefingStart は派生実験ブリーフ開始の永続的な結果。
+type DerivationBriefingStart struct {
+	RequestID          string
+	SourceExperimentID string
+	BriefingSessionID  string
+	OperationID        string
+	State              string
+	FailureCode        string
+}
+
 // ExperimentBriefingMessageOperation は実験ブリーフ会話送信の永続的な結果。
 type ExperimentBriefingMessageOperation struct {
 	RequestID         string

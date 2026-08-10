@@ -65,6 +65,7 @@ func main() {
 	experimentRunDetailsHandler := wailshandler.NewExperimentRunDetailsHandler(usecase.NewGetRunDetail(store), appLogger)
 	preparationsHandler := wailshandler.NewPreparationsHandler(usecase.NewListPreparations(store), appLogger)
 	briefingAdapter := acp.NewCodexBriefingAdapter(filepath.Join(configDirectory, applicationDirectoryName))
+	derivationBriefingsHandler := wailshandler.NewDerivationBriefingsHandler(usecase.NewStartDerivationBriefing(store, briefingAdapter), appLogger)
 	experimentBriefingsHandler := wailshandler.NewExperimentBriefingsHandler(
 		usecase.NewStartExperimentBriefing(store, briefingAdapter),
 		usecase.NewSendExperimentBriefMessage(store, briefingAdapter),
@@ -80,7 +81,7 @@ func main() {
 		Height:      800,
 		AssetServer: &assetserver.Options{Assets: assets},
 		OnStartup:   app.startup,
-		Bind:        []interface{}{experimentsHandler, experimentPreparationsHandler, experimentWorkspacesHandler, experimentComparisonsHandler, experimentDerivationSourcesHandler, finalizeExperimentConclusionsHandler, createDerivedExperimentsHandler, experimentRunsHandler, experimentRunRetriesHandler, experimentEvaluationsHandler, evaluationDetailsHandler, experimentRunDetailsHandler, preparationsHandler, experimentBriefingsHandler},
+		Bind:        []interface{}{experimentsHandler, experimentPreparationsHandler, experimentWorkspacesHandler, experimentComparisonsHandler, experimentDerivationSourcesHandler, finalizeExperimentConclusionsHandler, createDerivedExperimentsHandler, experimentRunsHandler, experimentRunRetriesHandler, experimentEvaluationsHandler, evaluationDetailsHandler, experimentRunDetailsHandler, preparationsHandler, derivationBriefingsHandler, experimentBriefingsHandler},
 	})
 	if err != nil {
 		appLogger.Error(context.Background(), "run application", err)

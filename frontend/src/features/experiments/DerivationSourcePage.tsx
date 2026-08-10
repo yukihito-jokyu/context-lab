@@ -11,13 +11,25 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { DerivationBriefingDialog } from "./components/DerivationBriefingDialog";
 import { formatExperimentDateTime } from "./lib/format-experiment-date-time";
 import type {
   DerivationSource,
   GetDerivationSourceService,
 } from "./services/get-derivation-source-service";
+import type { StartDerivationBriefingService } from "./services/start-derivation-briefing-service";
 
-function DerivationSourceContent({ source }: { source: DerivationSource }) {
+type DerivationBriefingServices = {
+  startDerivationBriefing: StartDerivationBriefingService;
+};
+
+function DerivationSourceContent({
+  source,
+  briefingServices,
+}: {
+  source: DerivationSource;
+  briefingServices?: DerivationBriefingServices;
+}) {
   const fixedConditions = source.source.fixedConditions;
   const conclusion = source.source.conclusion;
   const eligibility = source.eligibility;
@@ -28,6 +40,7 @@ function DerivationSourceContent({ source }: { source: DerivationSource }) {
   const reason = eligibility.reasonCode
     ? `派生を開始できない理由: ${reasonLabels[eligibility.reasonCode]}（${eligibility.reasonCode}）`
     : undefined;
+  const [isBriefingOpen, setIsBriefingOpen] = useState(false);
 
   return (
     <div className="space-y-6">
@@ -63,17 +76,33 @@ function DerivationSourceContent({ source }: { source: DerivationSource }) {
                 <Sparkles /> 派生実験を作成
               </Button>
             )}
-            <Button disabled type="button" variant="outline">
+            <Button
+              disabled={
+                !eligibility.canCreateDerivedExperiment || !briefingServices
+              }
+              id="start-derivation-briefing-button"
+              onClick={() => setIsBriefingOpen(true)}
+              type="button"
+              variant="outline"
+            >
               <FlaskConical /> 壁打ちを開始
             </Button>
           </div>
           {eligibility.canCreateDerivedExperiment && (
             <p className="text-sm text-muted-foreground">
-              壁打ちは、次の機能で利用可能になります。
+              派生元の条件と結論をもとに、相談を開始できます。
             </p>
           )}
         </CardContent>
       </Card>
+      {briefingServices && (
+        <DerivationBriefingDialog
+          onOpenChange={setIsBriefingOpen}
+          open={isBriefingOpen}
+          sourceExperimentId={source.source.experimentId}
+          startDerivationBriefing={briefingServices.startDerivationBriefing}
+        />
+      )}
 
       <section aria-labelledby="derivation-fixed-conditions-title">
         <h2
@@ -200,9 +229,11 @@ function DerivationSourceContent({ source }: { source: DerivationSource }) {
 export function DerivationSourcePage({
   experimentId,
   getDerivationSource,
+  briefingServices,
 }: {
   experimentId: string;
   getDerivationSource: GetDerivationSourceService;
+  briefingServices?: DerivationBriefingServices;
 }) {
   const [source, setSource] = useState<DerivationSource>();
   const [isLoading, setIsLoading] = useState(true);
@@ -295,7 +326,10 @@ export function DerivationSourcePage({
           </Empty>
         )}
         {!isLoading && !error && source && (
-          <DerivationSourceContent source={source} />
+          <DerivationSourceContent
+            briefingServices={briefingServices}
+            source={source}
+          />
         )}
       </div>
     </main>
