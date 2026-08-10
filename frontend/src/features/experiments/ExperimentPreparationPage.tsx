@@ -4,6 +4,7 @@ import {
   Plus,
   RefreshCw,
   Save,
+  ShieldCheck,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -14,6 +15,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatExperimentDateTime } from "./lib/format-experiment-date-time";
+import type {
+  FixExperimentConditionsService,
+  FixedExperimentConditions,
+} from "./services/fix-experiment-conditions-service";
 import type {
   ExperimentPreparation,
   GetExperimentPreparationService,
@@ -27,7 +32,9 @@ type ExperimentPreparationPageProps = {
   experimentId: string;
   getExperimentPreparation: GetExperimentPreparationService;
   saveExperimentPreparationDraft: SaveExperimentPreparationDraftService;
+  fixExperimentConditions: FixExperimentConditionsService;
   onBackToExperimentList?: () => void;
+  onConditionsFixed?: (experimentId: string, operationId: string) => void;
 };
 
 type DraftForm = Omit<
@@ -108,12 +115,19 @@ function PreparationSupport({ data }: { data: ExperimentPreparation }) {
 function DraftFormFields({
   draft,
   disabled,
+  fieldErrors,
   onChange,
 }: {
   draft: DraftForm;
   disabled: boolean;
+  fieldErrors: Record<string, string>;
   onChange: (draft: DraftForm) => void;
 }) {
+  const promptError =
+    fieldErrors.prompts ??
+    Object.entries(fieldErrors).find(([field]) =>
+      field.startsWith("prompts."),
+    )?.[1];
   const update = (
     field: Exclude<keyof DraftForm, "prompts">,
     value: string,
@@ -136,9 +150,21 @@ function DraftFormFields({
           className="min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-soft focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           disabled={disabled}
           id="preparation-purpose"
+          aria-describedby={
+            fieldErrors.purpose ? "preparation-purpose-error" : undefined
+          }
+          aria-invalid={Boolean(fieldErrors.purpose)}
           onChange={(event) => update("purpose", event.target.value)}
           value={draft.purpose}
         />
+        {fieldErrors.purpose && (
+          <p
+            className="text-sm text-destructive"
+            id="preparation-purpose-error"
+          >
+            {fieldErrors.purpose}
+          </p>
+        )}
       </div>
       <div className="space-y-2">
         <label className="text-sm font-medium" htmlFor="preparation-hypothesis">
@@ -148,9 +174,21 @@ function DraftFormFields({
           className="min-h-20 w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-soft focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           disabled={disabled}
           id="preparation-hypothesis"
+          aria-describedby={
+            fieldErrors.hypothesis ? "preparation-hypothesis-error" : undefined
+          }
+          aria-invalid={Boolean(fieldErrors.hypothesis)}
           onChange={(event) => update("hypothesis", event.target.value)}
           value={draft.hypothesis}
         />
+        {fieldErrors.hypothesis && (
+          <p
+            className="text-sm text-destructive"
+            id="preparation-hypothesis-error"
+          >
+            {fieldErrors.hypothesis}
+          </p>
+        )}
       </div>
       <div className="space-y-2">
         <label
@@ -163,11 +201,25 @@ function DraftFormFields({
           className="min-h-20 w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-soft focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           disabled={disabled}
           id="preparation-environment"
+          aria-describedby={
+            fieldErrors.environmentConditions
+              ? "preparation-environment-error"
+              : undefined
+          }
+          aria-invalid={Boolean(fieldErrors.environmentConditions)}
           onChange={(event) =>
             update("environmentConditions", event.target.value)
           }
           value={draft.environmentConditions}
         />
+        {fieldErrors.environmentConditions && (
+          <p
+            className="text-sm text-destructive"
+            id="preparation-environment-error"
+          >
+            {fieldErrors.environmentConditions}
+          </p>
+        )}
       </div>
       <div className="space-y-2">
         <label
@@ -180,9 +232,23 @@ function DraftFormFields({
           className="min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-soft focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           disabled={disabled}
           id="preparation-initial-input"
+          aria-describedby={
+            fieldErrors.initialInput
+              ? "preparation-initial-input-error"
+              : undefined
+          }
+          aria-invalid={Boolean(fieldErrors.initialInput)}
           onChange={(event) => update("initialInput", event.target.value)}
           value={draft.initialInput}
         />
+        {fieldErrors.initialInput && (
+          <p
+            className="text-sm text-destructive"
+            id="preparation-initial-input-error"
+          >
+            {fieldErrors.initialInput}
+          </p>
+        )}
       </div>
       <fieldset className="space-y-3">
         <legend className="text-sm font-medium">候補prompt</legend>
@@ -195,6 +261,10 @@ function DraftFormFields({
             <div className="flex gap-2" key={`${prompt}-${occurrence}`}>
               <Input
                 aria-label={`候補prompt ${index + 1}`}
+                aria-describedby={
+                  promptError ? "preparation-prompts-error" : undefined
+                }
+                aria-invalid={Boolean(promptError)}
                 disabled={disabled}
                 onChange={(event) => updatePrompt(index, event.target.value)}
                 value={prompt}
@@ -232,6 +302,11 @@ function DraftFormFields({
           promptを追加
         </Button>
       </fieldset>
+      {promptError && (
+        <p className="text-sm text-destructive" id="preparation-prompts-error">
+          {promptError}
+        </p>
+      )}
       <div className="space-y-2">
         <label
           className="text-sm font-medium"
@@ -243,9 +318,23 @@ function DraftFormFields({
           className="min-h-20 w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-soft focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           disabled={disabled}
           id="preparation-evaluation-axes"
+          aria-describedby={
+            fieldErrors.evaluationAxes
+              ? "preparation-evaluation-axes-error"
+              : undefined
+          }
+          aria-invalid={Boolean(fieldErrors.evaluationAxes)}
           onChange={(event) => update("evaluationAxes", event.target.value)}
           value={draft.evaluationAxes}
         />
+        {fieldErrors.evaluationAxes && (
+          <p
+            className="text-sm text-destructive"
+            id="preparation-evaluation-axes-error"
+          >
+            {fieldErrors.evaluationAxes}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -255,12 +344,15 @@ export function ExperimentPreparationPage({
   experimentId,
   getExperimentPreparation,
   saveExperimentPreparationDraft,
+  fixExperimentConditions,
   onBackToExperimentList,
+  onConditionsFixed,
 }: ExperimentPreparationPageProps) {
   const [data, setData] = useState<ExperimentPreparation>();
   const [draft, setDraft] = useState<DraftForm>(emptyDraft);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isFixing, setIsFixing] = useState(false);
   const [error, setError] = useState<{ code: string; message: string }>();
   const [saveError, setSaveError] = useState<{
     code: string;
@@ -268,6 +360,13 @@ export function ExperimentPreparationPage({
   }>();
   const [isEmpty, setIsEmpty] = useState(false);
   const [savedAt, setSavedAt] = useState<string>();
+  const [fixed, setFixed] = useState<FixedExperimentConditions>();
+  const [fixError, setFixError] = useState<{
+    code: string;
+    message: string;
+    fieldErrors?: Record<string, string>;
+  }>();
+  const [fixRequestId, setFixRequestId] = useState<string>();
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -336,6 +435,42 @@ export function ExperimentPreparationPage({
       });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const fix = async () => {
+    const requestId = fixRequestId ?? createRequestId();
+    setFixRequestId(requestId);
+    setIsFixing(true);
+    setFixError(undefined);
+    try {
+      const response = await fixExperimentConditions({
+        requestId,
+        experimentId,
+        ...draft,
+        hypothesis: draft.hypothesis || undefined,
+      });
+      if (response.data) {
+        setFixed(response.data);
+        onConditionsFixed?.(
+          response.data.experimentId,
+          response.data.operationId,
+        );
+        return;
+      }
+      setFixError(
+        response.error ?? {
+          code: "FIX_CONDITIONS_SAVE_FAILED",
+          message: "条件を固定できませんでした。",
+        },
+      );
+    } catch {
+      setFixError({
+        code: "FIX_CONDITIONS_SAVE_FAILED",
+        message: "条件を固定できませんでした。",
+      });
+    } finally {
+      setIsFixing(false);
     }
   };
 
@@ -448,6 +583,17 @@ export function ExperimentPreparationPage({
                     <AlertDescription>{saveError.message}</AlertDescription>
                   </Alert>
                 )}
+                {fixError && (
+                  <Alert
+                    id="fix-conditions-error"
+                    role="alert"
+                    variant="destructive"
+                  >
+                    <AlertCircle />
+                    <AlertTitle>条件を固定できません</AlertTitle>
+                    <AlertDescription>{fixError.message}</AlertDescription>
+                  </Alert>
+                )}
                 {savedAt && (
                   <p
                     aria-live="polite"
@@ -457,20 +603,47 @@ export function ExperimentPreparationPage({
                     保存済み: {formatExperimentDateTime(savedAt)}
                   </p>
                 )}
+                {fixed && (
+                  <p
+                    aria-live="polite"
+                    className="text-sm text-muted-foreground"
+                    id="fix-conditions-success"
+                  >
+                    条件を固定しました:{" "}
+                    {formatExperimentDateTime(fixed.fixedAt)}（操作ID:{" "}
+                    {fixed.operationId}）
+                  </p>
+                )}
                 <DraftFormFields
-                  disabled={!editable || isSaving}
+                  disabled={!editable || isSaving || isFixing}
                   draft={draft}
-                  onChange={setDraft}
+                  fieldErrors={fixError?.fieldErrors ?? {}}
+                  onChange={(nextDraft) => {
+                    setFixRequestId(undefined);
+                    setFixError(undefined);
+                    setDraft(nextDraft);
+                  }}
                 />
-                <Button
-                  disabled={!editable || isSaving}
-                  id="save-preparation-draft-button"
-                  onClick={() => void save()}
-                  type="button"
-                >
-                  <Save />
-                  {isSaving ? "保存中…" : "下書きを保存"}
-                </Button>
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    disabled={!editable || isSaving || isFixing}
+                    id="save-preparation-draft-button"
+                    onClick={() => void save()}
+                    type="button"
+                  >
+                    <Save />
+                    {isSaving ? "保存中…" : "下書きを保存"}
+                  </Button>
+                  <Button
+                    disabled={!editable || isSaving || isFixing}
+                    id="fix-conditions-button"
+                    onClick={() => void fix()}
+                    type="button"
+                  >
+                    <ShieldCheck />
+                    {isFixing ? "固定中…" : "条件を固定"}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
             <PreparationSupport data={data} />

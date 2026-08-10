@@ -115,6 +115,35 @@ type ExperimentPreparationDraft struct {
 	SavedAt               time.Time
 }
 
+// ExperimentFixedConditions は実験開始前に不変として記録する条件。
+type ExperimentFixedConditions struct {
+	RequestID             string
+	ExperimentID          string
+	Purpose               string
+	Hypothesis            *string
+	EnvironmentConditions string
+	InitialInput          string
+	Prompts               []ExperimentPreparationPrompt
+	EvaluationAxes        string
+	FixedConditionID      string
+	OperationID           string
+	FixedAt               time.Time
+}
+
+// Valid は固定できる必須条件が揃っているかを返す。
+func (c ExperimentFixedConditions) Valid() bool {
+	if strings.TrimSpace(c.Purpose) == "" || strings.TrimSpace(c.EnvironmentConditions) == "" || strings.TrimSpace(c.InitialInput) == "" || strings.TrimSpace(c.EvaluationAxes) == "" || len(c.Prompts) == 0 {
+		return false
+	}
+	for _, prompt := range c.Prompts {
+		if strings.TrimSpace(prompt.Content) == "" {
+			return false
+		}
+	}
+
+	return true
+}
+
 // ExperimentPreparationSource は採用済みブリーフの安全な表示用情報。
 type ExperimentPreparationSource struct {
 	State     string

@@ -2,7 +2,9 @@ import { EnvironmentPreparationListPage } from "@/features/environment-preparati
 import { listPreparations } from "@/features/environment-preparation/services/list-preparations-service";
 import { ExperimentListPage } from "@/features/experiments/ExperimentListPage";
 import { ExperimentPreparationPage } from "@/features/experiments/ExperimentPreparationPage";
+import { ExperimentWorkspacePage } from "@/features/experiments/ExperimentWorkspacePage";
 import { createExperimentFromBrief } from "@/features/experiments/services/create-experiment-from-brief-service";
+import { fixExperimentConditions } from "@/features/experiments/services/fix-experiment-conditions-service";
 import { getExperimentBriefing } from "@/features/experiments/services/get-experiment-briefing-service";
 import { getExperimentPreparation } from "@/features/experiments/services/get-experiment-preparation-service";
 import { listExperiments } from "@/features/experiments/services/list-experiments-service";
@@ -29,6 +31,21 @@ export default function App() {
   const preparationMatch = window.location.pathname.match(
     /^\/experiments\/([^/]+)\/preparation$/,
   );
+  const workspaceMatch = window.location.pathname.match(
+    /^\/experiments\/([^/]+)\/workspace$/,
+  );
+
+  if (workspaceMatch) {
+    return (
+      <ExperimentWorkspacePage
+        experimentId={decodeExperimentID(workspaceMatch[1])}
+        operationId={
+          new URLSearchParams(window.location.search).get("operationId") ??
+          undefined
+        }
+      />
+    );
+  }
 
   if (preparationMatch) {
     return (
@@ -36,6 +53,12 @@ export default function App() {
         experimentId={decodeExperimentID(preparationMatch[1])}
         getExperimentPreparation={getExperimentPreparation}
         onBackToExperimentList={() => window.location.assign("/")}
+        onConditionsFixed={(experimentId, operationId) =>
+          window.location.assign(
+            `/experiments/${encodeURIComponent(experimentId)}/workspace?operationId=${encodeURIComponent(operationId)}`,
+          )
+        }
+        fixExperimentConditions={fixExperimentConditions}
         saveExperimentPreparationDraft={saveExperimentPreparationDraft}
       />
     );

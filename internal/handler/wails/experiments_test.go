@@ -3,6 +3,7 @@ package wails
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/yukihito-jokyu/context-lab/internal/domain"
@@ -641,6 +642,167 @@ func TestExperimentPreparationsHandlerSaveExperimentPreparationDraft(t *testing.
 	}
 }
 
+// Wails条件固定の成功とフィールドエラー返却。
+func TestExperimentPreparationsHandlerFixExperimentConditions(t *testing.T) {
+	tests := []struct {
+		name      string
+		request   FixExperimentConditionsRequest
+		storeErr  error
+		wantCode  apperr.Code
+		wantField string
+	}{
+		{
+			name: "固定済み識別子を返す",
+			request: FixExperimentConditionsRequest{
+				RequestID:             "request-1",
+				ExperimentID:          "experiment-1",
+				Purpose:               "目的",
+				EnvironmentConditions: "環境",
+				InitialInput:          "入力",
+				Prompts:               []string{"prompt"},
+				EvaluationAxes:        "評価",
+			},
+		},
+		{
+			name: "必須条件のフィールドエラーを返す",
+			request: FixExperimentConditionsRequest{
+				RequestID:    "request-1",
+				ExperimentID: "experiment-1",
+			},
+			wantCode:  apperr.CodeConditionsInvalid,
+			wantField: "purpose",
+		},
+		{
+			name: "内部詳細を返さない",
+			request: FixExperimentConditionsRequest{
+				RequestID:             "request-1",
+				ExperimentID:          "experiment-1",
+				Purpose:               "目的",
+				EnvironmentConditions: "環境",
+				InitialInput:          "入力",
+				Prompts:               []string{"prompt"},
+				EvaluationAxes:        "評価",
+			},
+			storeErr: apperr.Wrap(apperr.CodeExperimentConditionsConflict, errors.New("private database credential")),
+			wantCode: apperr.CodeExperimentConditionsConflict,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &handlerExperimentConditionsStore{err: tt.storeErr}
+			handler := NewExperimentPreparationsHandlerWithConditions(usecase.NewGetExperimentPreparation(handlerExperimentPreparationReader{}), newTestLogger(), usecase.NewSaveExperimentPreparationDraft(&handlerExperimentPreparationDraftStore{}), usecase.NewFixExperimentConditions(store))
+			got := handler.FixExperimentConditions(tt.request)
+			if tt.wantCode != "" {
+				if got.Error == nil {
+					t.Fatal("Error = nil, want safe error")
+				}
+				if got.Error.Code != string(tt.wantCode) {
+					t.Errorf("Error.Code = %q, want %q", got.Error.Code, tt.wantCode)
+				}
+				if _, found := got.Error.FieldErrors[tt.wantField]; tt.wantField != "" && !found {
+					t.Errorf("FieldErrors = %+v, want key %q", got.Error.FieldErrors, tt.wantField)
+				}
+				if strings.Contains(got.Error.Message, "private database credential") {
+					t.Errorf("Error.Message = %q, want no internal credential", got.Error.Message)
+				}
+
+				return
+			}
+			if got.Error != nil {
+				t.Fatalf("Error = %+v, want nil", got.Error)
+			}
+			if got.Data == nil {
+				t.Fatal("Data = nil, want fixed conditions")
+			}
+			if got.Data.State != "ready" || got.Data.FixedConditionID == "" || got.Data.OperationID == "" {
+				t.Errorf("Data = %+v, want ready fixed snapshot", got.Data)
+			}
+		})
+	}
+}
+
+// 条件固定command未設定時の安全な失敗返却。
+func TestExperimentPreparationsHandlerFixExperimentConditionsWithoutCommand(t *testing.T) {
+	handler := NewExperimentPreparationsHandler(usecase.NewGetExperimentPreparation(handlerExperimentPreparationReader{}), newTestLogger())
+	got := handler.FixExperimentConditions(FixExperimentConditionsRequest{
+		RequestID:             "request-1",
+		ExperimentID:          "experiment-1",
+		Purpose:               "目的",
+		EnvironmentConditions: "環境",
+		InitialInput:          "入力",
+		Prompts:               []string{"prompt"},
+		EvaluationAxes:        "評価",
+	})
+	if got.Error == nil || got.Error.Code != string(apperr.CodeFixConditionsSaveFailed) {
+		t.Errorf("Error = %+v, want code %q", got.Error, apperr.CodeFixConditionsSaveFailed)
+	}
+}
+
+// 条件固定エラー変換の未分類エラーと入力不足。
+func TestFailFixExperimentConditions(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		request    FixExperimentConditionsRequest
+		wantCode   apperr.Code
+		wantFields map[string]string
+	}{
+		{
+			name:     "未分類エラーを安全なエラーへ変換する",
+			err:      errors.New("private database detail"),
+			wantCode: apperr.CodeUnexpected,
+			request: FixExperimentConditionsRequest{
+				RequestID:    "request-1",
+				ExperimentID: "experiment-1",
+			},
+			wantFields: nil,
+		},
+		{
+			name:     "空白promptをフィールドエラーへ変換する",
+			err:      apperr.New(apperr.CodeConditionsInvalid),
+			wantCode: apperr.CodeConditionsInvalid,
+			request: FixExperimentConditionsRequest{
+				RequestID:             "request-1",
+				ExperimentID:          "experiment-1",
+				Purpose:               " ",
+				EnvironmentConditions: " ",
+				InitialInput:          " ",
+				Prompts: []string{
+					"prompt",
+					" ",
+				},
+				EvaluationAxes: " ",
+			},
+			wantFields: map[string]string{
+				"purpose":               "目的を入力してください",
+				"environmentConditions": "環境条件を入力してください",
+				"initialInput":          "初期入力を入力してください",
+				"evaluationAxes":        "評価軸を入力してください",
+				"prompts.1":             "promptを入力してください",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := failFixExperimentConditions(tt.err, tt.request)
+			if got.Data != nil {
+				t.Errorf("Data = %+v, want nil", got.Data)
+			}
+			if got.Error == nil {
+				t.Fatal("Error = nil, want safe error")
+			}
+			if got.Error.Code != string(tt.wantCode) {
+				t.Errorf("Error.Code = %q, want %q", got.Error.Code, tt.wantCode)
+			}
+			if !reflect.DeepEqual(got.Error.FieldErrors, tt.wantFields) {
+				t.Errorf("Error.FieldErrors = %+v, want %+v", got.Error.FieldErrors, tt.wantFields)
+			}
+		})
+	}
+}
+
 // 実験準備query失敗の安全な変換。
 func TestFailGetExperimentPreparation(t *testing.T) {
 	got := failGetExperimentPreparation(errors.New("private database detail"))
@@ -668,6 +830,23 @@ func (r handlerExperimentPreparationReader) GetExperimentPreparation(context.Con
 type handlerExperimentPreparationDraftStore struct {
 	draft domain.ExperimentPreparationDraft
 	err   error
+}
+
+// handlerExperimentConditionsStore はhandler用条件固定portのtest double。
+type handlerExperimentConditionsStore struct {
+	err error
+}
+
+// FixExperimentConditions は指定済み条件または失敗を返却。
+func (s *handlerExperimentConditionsStore) FixExperimentConditions(_ context.Context, conditions domain.ExperimentFixedConditions) (domain.ExperimentFixedConditions, error) {
+	if s.err != nil {
+		return domain.ExperimentFixedConditions{}, s.err
+	}
+	conditions.FixedConditionID = "fixed-1"
+	conditions.OperationID = "operation-1"
+	conditions.FixedAt = time.Now().UTC()
+
+	return conditions, nil
 }
 
 // SaveExperimentPreparationDraft は指定済み下書きまたは失敗を返却。

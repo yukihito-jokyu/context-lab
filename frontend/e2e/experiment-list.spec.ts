@@ -8,6 +8,7 @@ type CreateExperimentFromBriefResponse = Record<string, unknown>;
 type StopExperimentBriefingResponse = Record<string, unknown>;
 type GetExperimentPreparationResponse = Record<string, unknown>;
 type SaveExperimentPreparationDraftResponse = Record<string, unknown>;
+type FixExperimentConditionsResponse = Record<string, unknown>;
 type ListPreparationsResponse = Record<string, unknown>;
 
 declare global {
@@ -29,6 +30,11 @@ declare global {
       briefVersionId: string;
     }>;
     __draftSaveRequests: Array<{
+      requestId: string;
+      experimentId: string;
+      purpose: string;
+    }>;
+    __fixConditionsRequests: Array<{
       requestId: string;
       experimentId: string;
       purpose: string;
@@ -102,15 +108,26 @@ async function installExperimentPreparationMock(
       },
     },
   ],
+  fixResponses: FixExperimentConditionsResponse[] = [
+    {
+      error: {
+        code: "FIX_CONDITIONS_SAVE_FAILED",
+        message: "条件を固定できませんでした。",
+      },
+    },
+  ],
 ) {
   await page.addInitScript({
     content: `
       const responses = ${JSON.stringify(responses)};
       const saveResponses = ${JSON.stringify(saveResponses)};
+      const fixResponses = ${JSON.stringify(fixResponses)};
       let callCount = 0;
       let saveCallCount = 0;
+      let fixCallCount = 0;
       window.go = window.go || { wails: {} };
       window.__draftSaveRequests = [];
+      window.__fixConditionsRequests = window.__fixConditionsRequests || [];
       window.go.wails.ExperimentPreparationsHandler = {
         GetExperimentPreparation: () => {
           const response = responses[Math.min(callCount, responses.length - 1)];
@@ -126,6 +143,17 @@ async function installExperimentPreparationMock(
           window.__draftSaveRequests.push(request);
           const response = saveResponses[Math.min(saveCallCount, saveResponses.length - 1)];
           saveCallCount += 1;
+          if (response.delayMs) {
+            return new Promise((resolve) => {
+              window.setTimeout(() => resolve(response.result), response.delayMs);
+            });
+          }
+          return Promise.resolve(response);
+        },
+        FixExperimentConditions: (request) => {
+          window.__fixConditionsRequests.push(request);
+          const response = fixResponses[Math.min(fixCallCount, fixResponses.length - 1)];
+          fixCallCount += 1;
           if (response.delayMs) {
             return new Promise((resolve) => {
               window.setTimeout(() => resolve(response.result), response.delayMs);
@@ -912,6 +940,160 @@ test("実験準備の保存失敗では入力を保持し、再試行は別reque
     window.__draftSaveRequests.map((request) => request.requestId),
   );
   expect(requestIds[0]).not.toBe(requestIds[1]);
+});
+
+test("実験準備の条件固定は成功後にワークスペースへ遷移する", async ({
+  page,
+}) => {
+  await installExperimentPreparationMock(
+    page,
+    [
+      {
+        data: {
+          experimentId: "EXP-015",
+          state: "preparing",
+          purpose: "問い合わせ要約の品質を比較する",
+          environmentConditions: "同じ入力と評価手順を用いる",
+          initialInput: "顧客問い合わせ本文",
+          prompts: [{ sequenceNo: 1, content: "短く要約する" }],
+          evaluationAxes: "正確性、要点保持",
+          source: { state: "adopted", versionId: "brief-v1" },
+          requiredFields: {
+            purpose: true,
+            environmentConditions: true,
+            initialInput: true,
+            prompts: false,
+            evaluationAxes: true,
+          },
+          lastConfirmedAt: confirmedAt,
+        },
+      },
+    ],
+    undefined,
+    [
+      {
+        data: {
+          experimentId: "EXP-015",
+          state: "ready",
+          fixedConditionId: "fixed-1",
+          operationId: "operation-1",
+          fixedAt: confirmedAt,
+        },
+      },
+    ],
+  );
+  await page.goto("/experiments/EXP-015/preparation");
+  await page.locator("#fix-conditions-button").click();
+
+  await expect(page).toHaveURL(
+    /\/experiments\/EXP-015\/workspace\?operationId=operation-1$/,
+  );
+  await expect(
+    page.getByRole("heading", { name: "実験ワークスペース" }),
+  ).toBeVisible();
+  await expect(page.locator("#experiment-workspace-ready")).toContainText(
+    "操作ID: operation-1",
+  );
+});
+
+test("実験準備の条件固定中はフォームと下書き保存を無効化する", async ({
+  page,
+}) => {
+  await installExperimentPreparationMock(
+    page,
+    [
+      {
+        data: {
+          experimentId: "EXP-015",
+          state: "preparing",
+          purpose: "問い合わせ要約の品質を比較する",
+          environmentConditions: "同じ入力と評価手順を用いる",
+          initialInput: "顧客問い合わせ本文",
+          prompts: [],
+          evaluationAxes: "正確性、要点保持",
+          source: { state: "adopted", versionId: "brief-v1" },
+          requiredFields: {
+            purpose: true,
+            environmentConditions: true,
+            initialInput: true,
+            prompts: false,
+            evaluationAxes: true,
+          },
+          lastConfirmedAt: confirmedAt,
+        },
+      },
+    ],
+    undefined,
+    [{ delayMs: 300, result: {} }],
+  );
+  await page.goto("/experiments/EXP-015/preparation");
+  await page.locator("#fix-conditions-button").click();
+
+  await expect(page.getByRole("button", { name: "固定中…" })).toBeDisabled();
+  await expect(page.locator("#save-preparation-draft-button")).toBeDisabled();
+  await expect(page.getByLabel("実験目的")).toBeDisabled();
+});
+
+test("実験準備の条件固定失敗は入力エラーを関連付け、同じrequest IDで再試行する", async ({
+  page,
+}) => {
+  await installExperimentPreparationMock(
+    page,
+    [
+      {
+        data: {
+          experimentId: "EXP-015",
+          state: "preparing",
+          purpose: "問い合わせ要約の品質を比較する",
+          environmentConditions: "同じ入力と評価手順を用いる",
+          initialInput: "顧客問い合わせ本文",
+          prompts: [],
+          evaluationAxes: "正確性、要点保持",
+          source: { state: "adopted", versionId: "brief-v1" },
+          requiredFields: {
+            purpose: true,
+            environmentConditions: true,
+            initialInput: true,
+            prompts: false,
+            evaluationAxes: true,
+          },
+          lastConfirmedAt: confirmedAt,
+        },
+      },
+    ],
+    undefined,
+    [
+      {
+        error: {
+          code: "CONDITIONS_INVALID",
+          message: "入力を確認してください。",
+          fieldErrors: { purpose: "実験目的を入力してください。" },
+        },
+      },
+      {
+        error: {
+          code: "FIX_CONDITIONS_SAVE_FAILED",
+          message: "一時的に固定できませんでした。",
+        },
+      },
+    ],
+  );
+  await page.goto("/experiments/EXP-015/preparation");
+  await page.locator("#fix-conditions-button").click();
+  await expect(page.locator("#preparation-purpose-error")).toHaveText(
+    "実験目的を入力してください。",
+  );
+  await expect(page.getByLabel("実験目的")).toHaveAttribute(
+    "aria-describedby",
+    "preparation-purpose-error",
+  );
+  await page.locator("#fix-conditions-button").click();
+
+  const requestIds = await page.evaluate(() =>
+    window.__fixConditionsRequests.map((request) => request.requestId),
+  );
+  expect(requestIds).toHaveLength(2);
+  expect(requestIds[0]).toBe(requestIds[1]);
 });
 
 test("実験準備の読込中と空状態を表示する", async ({ page }) => {
