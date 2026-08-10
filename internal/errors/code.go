@@ -50,6 +50,11 @@ const (
 	CodeEvaluationDetailRequestInvalid    Code = "EVALUATION_DETAIL_REQUEST_INVALID"
 	CodeEvaluationDetailNotFound          Code = "EVALUATION_DETAIL_NOT_FOUND"
 	CodeEvaluationDetailUnavailable       Code = "EVALUATION_DETAIL_UNAVAILABLE"
+	CodeRunRetryRequestInvalid            Code = "RUN_RETRY_REQUEST_INVALID"
+	CodeRunRetryNotFound                  Code = "RUN_RETRY_NOT_FOUND"
+	CodeRunRetryNotAllowed                Code = "RUN_RETRY_NOT_ALLOWED"
+	CodeRunRetryRequestConflict           Code = "RUN_RETRY_REQUEST_CONFLICT"
+	CodeRunRetryUnavailable               Code = "RUN_RETRY_UNAVAILABLE"
 	CodeOperationTimeout                  Code = "OPERATION_TIMEOUT"
 	CodeOperationCanceled                 Code = "OPERATION_CANCELED"
 	CodeUnexpected                        Code = "UNEXPECTED"
@@ -102,6 +107,11 @@ var defaultMessages = map[Code]message{
 	CodeEvaluationDetailRequestInvalid:    "評価詳細の取得要求が不正です",
 	CodeEvaluationDetailNotFound:          "評価が見つかりません",
 	CodeEvaluationDetailUnavailable:       "評価詳細を取得できませんでした",
+	CodeRunRetryRequestInvalid:            "run再実行要求が不正です",
+	CodeRunRetryNotFound:                  "再実行するrunが見つかりません",
+	CodeRunRetryNotAllowed:                "失敗したrunだけを再実行できます",
+	CodeRunRetryRequestConflict:           "この再実行要求は別のrunに使用されています",
+	CodeRunRetryUnavailable:               "再実行用runを作成できませんでした",
 	CodeOperationTimeout:                  "実験一覧の取得がタイムアウトしました",
 	CodeOperationCanceled:                 "実験一覧の取得を中止しました",
 	CodeUnexpected:                        "予期しないエラーが発生しました",

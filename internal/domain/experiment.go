@@ -144,10 +144,22 @@ type ExperimentWorkspace struct {
 
 // ExperimentWorkspaceRun は実験ワークスペースに表示するrunの安全な進行状況。
 type ExperimentWorkspaceRun struct {
-	ID        string
-	State     string
-	Summary   *string
-	UpdatedAt time.Time
+	ID           string
+	RetryOfRunID *string
+	State        string
+	Summary      *string
+	UpdatedAt    time.Time
+}
+
+// ExperimentRunRetry は終了runから作成した再実行用run。
+type ExperimentRunRetry struct {
+	RequestID    string
+	SourceRunID  string
+	ExperimentID string
+	RetryRunID   string
+	OperationID  string
+	State        string
+	CreatedAt    time.Time
 }
 
 // ExperimentRunDetail はrun詳細画面が再表示する安全な観測結果。

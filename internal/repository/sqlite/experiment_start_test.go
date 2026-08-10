@@ -602,9 +602,45 @@ const (
 	experimentStartPostCommitMissing              experimentStartFailureStage = "post-commit-missing"
 	experimentStartPostCommitReadError            experimentStartFailureStage = "post-commit-read-error"
 	experimentStartFindRunsError                  experimentStartFailureStage = "find-runs-error"
+	experimentStartFindRunsScanError              experimentStartFailureStage = "find-runs-scan-error"
+	experimentStartFindRunsTimeError              experimentStartFailureStage = "find-runs-time-error"
+	experimentStartFindRunsRowsError              experimentStartFailureStage = "find-runs-rows-error"
 	experimentStartFindWorkspaceError             experimentStartFailureStage = "find-workspace-error"
 	experimentStartFindWorkspaceMissing           experimentStartFailureStage = "find-workspace-missing"
 )
+
+// 開始run一覧のSQLite読込失敗を返す。
+func TestFindExperimentStartRunsDriverFailures(t *testing.T) {
+	tests := []struct {
+		name  string
+		stage experimentStartFailureStage
+	}{
+		{
+			name:  "query失敗",
+			stage: experimentStartFindRunsError,
+		},
+		{
+			name:  "scan失敗",
+			stage: experimentStartFindRunsScanError,
+		},
+		{
+			name:  "時刻変換失敗",
+			stage: experimentStartFindRunsTimeError,
+		},
+		{
+			name:  "行走査失敗",
+			stage: experimentStartFindRunsRowsError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := newExperimentStartFailureStore(t, tt.stage).findExperimentStartRuns(context.Background(), "operation-1")
+			if err == nil {
+				t.Error("findExperimentStartRuns() error = nil, want SQLite read error")
+			}
+		})
+	}
+}
 
 const experimentStartFailureDriverName = "context-lab-experiment-start-failure"
 
@@ -808,14 +844,38 @@ func (c *experimentStartFailureConnection) QueryContext(_ context.Context, query
 		if c.stage == experimentStartFindRunsError {
 			return nil, errors.New("runs query failed")
 		}
-		return &experimentStartFailureRows{
+		rows := &experimentStartFailureRows{
 			columns: []string{
 				"id",
 				"state",
 				"summary",
 				"updated_at",
 			},
-		}, nil
+		}
+		if c.stage == experimentStartFindRunsScanError {
+			rows.values = [][]driver.Value{
+				{
+					nil,
+					"failed",
+					nil,
+					"2026-08-10T00:00:00Z",
+				},
+			}
+		}
+		if c.stage == experimentStartFindRunsTimeError {
+			rows.values = [][]driver.Value{
+				{
+					"run-1",
+					"failed",
+					nil,
+					"invalid",
+				},
+			}
+		}
+		if c.stage == experimentStartFindRunsRowsError {
+			rows.nextErr = errors.New("run rows failed")
+		}
+		return rows, nil
 	case strings.Contains(query, "FROM experiments e JOIN experiment_fixed_conditions"):
 		if c.stage == experimentStartFindWorkspaceError {
 			return nil, errors.New("workspace query failed")
