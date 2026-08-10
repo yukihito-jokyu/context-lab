@@ -50,6 +50,7 @@ type FinalizeExperimentConclusionResponse = Record<string, unknown> & {
   delayMs?: number;
   result?: Record<string, unknown>;
 };
+type GetInsightWorkspaceResponse = Record<string, unknown>;
 type ListPreparationsResponse = Record<string, unknown>;
 
 declare global {
@@ -379,6 +380,26 @@ async function installComparisonMock(
 ) {
   await page.addInitScript({
     content: `const r=${JSON.stringify(responses)};let i=0;window.go=window.go||{wails:{}};window.go.wails.ExperimentComparisonsHandler={GetExperimentComparison:()=>Promise.resolve(r[Math.min(i++,r.length-1)])};`,
+  });
+}
+
+async function installInsightWorkspaceMock(
+  page: Page,
+  responses: GetInsightWorkspaceResponse[],
+) {
+  await page.addInitScript({
+    content: `
+      const responses = ${JSON.stringify(responses)};
+      let callCount = 0;
+      window.go = window.go || { wails: {} };
+      window.go.wails.InsightsHandler = {
+        GetInsightWorkspace: () => {
+          const response = responses[Math.min(callCount, responses.length - 1)];
+          callCount += 1;
+          return Promise.resolve(response);
+        },
+      };
+    `,
   });
 }
 
@@ -1839,6 +1860,68 @@ test("比較結果から結論を確定し、失敗再試行と永続済み結�
   await expect(page.locator("#experiment-conclusion-finalized")).toContainText(
     "永続済みの結論",
   );
+  await installInsightWorkspaceMock(page, [
+    {
+      data: {
+        evidenceCandidates: [
+          {
+            experimentId: "EXP-19",
+            purpose: "結論の比較",
+            evaluationAxes: "正確性",
+            conclusionId: "conclusion-19",
+            conclusion: "画面から確定した結論",
+            finalizedAt: confirmedAt,
+          },
+          {
+            experimentId: "EXP-20",
+            purpose: "別条件の比較",
+            evaluationAxes: "再現性",
+            conclusionId: "conclusion-20",
+            conclusion: "別条件の結論",
+            finalizedAt: confirmedAt,
+          },
+        ],
+        savedConsiderations: [
+          {
+            experimentId: "EXP-19",
+            conclusionId: "conclusion-19",
+            content: "画面から確定した結論",
+            finalizedAt: confirmedAt,
+          },
+        ],
+        insights: [],
+        lastConfirmedAt: confirmedAt,
+      },
+    },
+    {
+      error: {
+        code: "INSIGHT_WORKSPACE_UNAVAILABLE",
+        message: "一時的に知見を取得できません",
+      },
+    },
+    {
+      data: {
+        evidenceCandidates: [],
+        savedConsiderations: [],
+        insights: [],
+      },
+    },
+  ]);
+  await page.getByRole("link", { name: "知見を確認" }).click();
+  await expect(page.locator("#insight-evidence-EXP-19")).toContainText(
+    "画面から確定した結論",
+  );
+  await expect(page.locator("#insight-evidence-EXP-19")).toContainText(
+    "選択中",
+  );
+  await page.locator("#reload-insight-workspace-button").click();
+  await expect(page.locator("#insight-workspace-error")).toContainText(
+    "一時的に知見を取得できません",
+  );
+  await page.locator("#retry-insight-workspace-button").click();
+  await expect(
+    page.locator("#empty-insight-evidence-candidates"),
+  ).toContainText("根拠候補がありません");
 });
 
 test("派生の作成元は固定条件・結論・可否を表示し、失敗後に再読込する", async ({

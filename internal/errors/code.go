@@ -89,6 +89,7 @@ const (
 	CodeExperimentConclusionRequestConflict      Code = "EXPERIMENT_CONCLUSION_REQUEST_CONFLICT"
 	CodeExperimentConclusionAlreadyFinalized     Code = "EXPERIMENT_CONCLUSION_ALREADY_FINALIZED"
 	CodeExperimentConclusionUnavailable          Code = "EXPERIMENT_CONCLUSION_UNAVAILABLE"
+	CodeInsightWorkspaceUnavailable              Code = "INSIGHT_WORKSPACE_UNAVAILABLE"
 	CodeOperationTimeout                         Code = "OPERATION_TIMEOUT"
 	CodeOperationCanceled                        Code = "OPERATION_CANCELED"
 	CodeUnexpected                               Code = "UNEXPECTED"
@@ -172,6 +173,7 @@ var defaultMessages = map[Code]message{
 	CodeExperimentConclusionRequestConflict:      "この結論確定要求は別の内容に使用されています",
 	CodeExperimentConclusionAlreadyFinalized:     "この実験の結論はすでに確定しています",
 	CodeExperimentConclusionUnavailable:          "実験の結論を確定できませんでした",
+	CodeInsightWorkspaceUnavailable:              "知見ワークスペースを取得できませんでした",
 	CodeOperationTimeout:                         "実験一覧の取得がタイムアウトしました",
 	CodeOperationCanceled:                        "実験一覧の取得を中止しました",
 	CodeUnexpected:                               "予期しないエラーが発生しました",

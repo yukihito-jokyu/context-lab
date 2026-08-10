@@ -7,6 +7,7 @@ import { EvaluationDetailPage } from "@/features/experiments/EvaluationDetailPag
 import { ExperimentListPage } from "@/features/experiments/ExperimentListPage";
 import { ExperimentPreparationPage } from "@/features/experiments/ExperimentPreparationPage";
 import { ExperimentWorkspacePage } from "@/features/experiments/ExperimentWorkspacePage";
+import { InsightWorkspacePage } from "@/features/experiments/InsightWorkspacePage";
 import { RunEvaluationPage } from "@/features/experiments/RunEvaluationPage";
 import { createDerivedExperiment } from "@/features/experiments/services/create-derived-experiment-service";
 import { createExperimentFromBrief } from "@/features/experiments/services/create-experiment-from-brief-service";
@@ -19,6 +20,7 @@ import { getExperimentBriefing } from "@/features/experiments/services/get-exper
 import { getExperimentComparison } from "@/features/experiments/services/get-experiment-comparison-service";
 import { getExperimentPreparation } from "@/features/experiments/services/get-experiment-preparation-service";
 import { getExperimentWorkspace } from "@/features/experiments/services/get-experiment-workspace-service";
+import { getInsightWorkspace } from "@/features/experiments/services/get-insight-workspace-service";
 import { getRunDetail } from "@/features/experiments/services/get-run-detail-service";
 import { listExperiments } from "@/features/experiments/services/list-experiments-service";
 import { retryEndedRun } from "@/features/experiments/services/retry-ended-run-service";
@@ -61,6 +63,9 @@ export default function App() {
   );
   const derivationSourceMatch = window.location.pathname.match(
     /^\/experiments\/([^/]+)\/derivations$/,
+  );
+  const insightWorkspaceMatch = window.location.pathname.match(
+    /^\/experiments\/([^/]+)\/insights$/,
   );
   const createDerivedExperimentMatch = window.location.pathname.match(
     /^\/experiments\/([^/]+)\/derivations\/create$/,
@@ -115,6 +120,15 @@ export default function App() {
         }}
         experimentId={decodeExperimentID(derivationSourceMatch[1])}
         getDerivationSource={getDerivationSource}
+      />
+    );
+  }
+
+  if (insightWorkspaceMatch) {
+    return (
+      <InsightWorkspacePage
+        getInsightWorkspace={getInsightWorkspace}
+        initialExperimentId={decodeExperimentID(insightWorkspaceMatch[1])}
       />
     );
   }
