@@ -6,6 +6,7 @@ import { createExperimentFromBrief } from "@/features/experiments/services/creat
 import { getExperimentBriefing } from "@/features/experiments/services/get-experiment-briefing-service";
 import { getExperimentPreparation } from "@/features/experiments/services/get-experiment-preparation-service";
 import { listExperiments } from "@/features/experiments/services/list-experiments-service";
+import { saveExperimentPreparationDraft } from "@/features/experiments/services/save-experiment-preparation-draft-service";
 import { sendExperimentBriefMessage } from "@/features/experiments/services/send-experiment-brief-message-service";
 import { startExperimentBriefing } from "@/features/experiments/services/start-experiment-briefing-service";
 import { stopExperimentBriefing } from "@/features/experiments/services/stop-experiment-briefing-service";
@@ -35,6 +36,7 @@ export default function App() {
         experimentId={decodeExperimentID(preparationMatch[1])}
         getExperimentPreparation={getExperimentPreparation}
         onBackToExperimentList={() => window.location.assign("/")}
+        saveExperimentPreparationDraft={saveExperimentPreparationDraft}
       />
     );
   }

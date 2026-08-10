@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, within } from "storybook/test";
+import { expect, fn, within } from "storybook/test";
 import { ExperimentPreparationPage } from "./ExperimentPreparationPage";
 
 const confirmedAt = "2026-08-09T10:25:00+09:00";
@@ -42,7 +42,10 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {
-  args: { getExperimentPreparation: async () => ({ data: preparation }) },
+  args: {
+    getExperimentPreparation: async () => ({ data: preparation }),
+    saveExperimentPreparationDraft: fn(async () => ({})),
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(
@@ -52,7 +55,10 @@ export const Default: Story = {
 };
 
 export const Loading: Story = {
-  args: { getExperimentPreparation: () => new Promise(() => {}) },
+  args: {
+    getExperimentPreparation: () => new Promise(() => {}),
+    saveExperimentPreparationDraft: fn(async () => ({})),
+  },
   play: async ({ canvasElement }) => {
     await expect(
       within(canvasElement).getByText("条件を読み込んでいます…"),
@@ -61,7 +67,10 @@ export const Loading: Story = {
 };
 
 export const Empty: Story = {
-  args: { getExperimentPreparation: async () => ({}) },
+  args: {
+    getExperimentPreparation: async () => ({}),
+    saveExperimentPreparationDraft: fn(async () => ({})),
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(
@@ -78,6 +87,7 @@ export const LoadError: Story = {
         message: "実験準備を取得できませんでした。",
       },
     }),
+    saveExperimentPreparationDraft: fn(async () => ({})),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -95,5 +105,40 @@ export const NotFound: Story = {
         message: "指定した実験は存在しません。",
       },
     }),
+    saveExperimentPreparationDraft: fn(async () => ({})),
+  },
+};
+
+export const SaveSuccess: Story = {
+  args: {
+    getExperimentPreparation: async () => ({ data: preparation }),
+    saveExperimentPreparationDraft: fn(async () => ({
+      data: {
+        ...preparation,
+        prompts: preparation.prompts.map((prompt) => prompt.content),
+        savedAt: confirmedAt,
+      },
+    })),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.getByRole("button", { name: "下書きを保存" }).click();
+    await expect(await canvas.findByText(/保存済み:/)).toBeVisible();
+  },
+};
+
+export const SaveError: Story = {
+  args: {
+    getExperimentPreparation: async () => ({ data: preparation }),
+    saveExperimentPreparationDraft: fn(async () => ({
+      error: { code: "DRAFT_SAVE_FAILED", message: "保存できませんでした。" },
+    })),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.getByRole("button", { name: "下書きを保存" }).click();
+    await expect(
+      await canvas.findByText("下書きを保存できません"),
+    ).toBeVisible();
   },
 };
