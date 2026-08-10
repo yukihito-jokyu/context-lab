@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,7 +18,10 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const databaseFileName = "context-lab.sqlite"
+const (
+	databaseFileName  = "context-lab.sqlite"
+	sqliteBusyTimeout = 10 * time.Second
+)
 
 var createDataDirectory = os.MkdirAll
 
@@ -43,7 +47,7 @@ func Open(dataDirectory string) (*Store, error) {
 		return nil, fmt.Errorf("create data directory: %w", err)
 	}
 
-	db, err := openDatabase("sqlite", filepath.Join(dataDirectory, databaseFileName))
+	db, err := openDatabase("sqlite", databaseDSN(dataDirectory))
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
@@ -77,6 +81,19 @@ func Open(dataDirectory string) (*Store, error) {
 	}
 
 	return store, nil
+}
+
+// databaseDSN は同時読込・書込を待機できるWAL接続文字列を返す。
+func databaseDSN(dataDirectory string) string {
+	query := url.Values{}
+	query.Add("_pragma", fmt.Sprintf("busy_timeout(%d)", sqliteBusyTimeout.Milliseconds()))
+	query.Add("_pragma", "journal_mode(WAL)")
+
+	return (&url.URL{
+		Scheme:   "file",
+		Path:     filepath.Join(dataDirectory, databaseFileName),
+		RawQuery: query.Encode(),
+	}).String()
 }
 
 // Close はSQLite接続を閉じる。

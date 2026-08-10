@@ -51,6 +51,20 @@ func TestOpen(t *testing.T) {
 				if migrationCount != 10 {
 					t.Errorf("schema migrations count after migrate = %d, want %d", migrationCount, 10)
 				}
+				var busyTimeout int
+				if err := store.db.QueryRow("PRAGMA busy_timeout").Scan(&busyTimeout); err != nil {
+					t.Errorf("busy timeout query error = %v", err)
+				}
+				if wantBusyTimeout := int(sqliteBusyTimeout.Milliseconds()); busyTimeout != wantBusyTimeout {
+					t.Errorf("busy timeout = %d, want %d", busyTimeout, wantBusyTimeout)
+				}
+				var journalMode string
+				if err := store.db.QueryRow("PRAGMA journal_mode").Scan(&journalMode); err != nil {
+					t.Errorf("journal mode query error = %v", err)
+				}
+				if journalMode != "wal" {
+					t.Errorf("journal mode = %q, want %q", journalMode, "wal")
+				}
 			},
 		},
 		{
@@ -135,6 +149,44 @@ func TestOpenFailures(t *testing.T) {
 				t.Errorf("Open() error = %q, want to contain %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// SQLiteストアの初期化済みoperation adapter検証
+func TestOpenInitializesOperationAdapters(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+
+	transaction, err := store.beginBriefingTransaction(context.Background())
+	if err != nil {
+		t.Fatalf("beginBriefingTransaction() error = %v", err)
+	}
+	if err := transaction.Rollback(); err != nil {
+		t.Errorf("Rollback() error = %v", err)
+	}
+	if _, err := store.failBriefingMessageOperation(context.Background(), "request-1", "failed"); err != nil {
+		t.Errorf("failBriefingMessageOperation() error = %v", err)
+	}
+	rows, err := store.listPreparations(context.Background())
+	if err != nil {
+		t.Fatalf("listPreparations() error = %v", err)
+	}
+	if err := rows.Close(); err != nil {
+		t.Errorf("Close() error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Store.Close() error = %v", err)
+	}
+	if _, err := store.beginBriefingTransaction(context.Background()); err == nil {
+		t.Error("beginBriefingTransaction() error = nil, want closed database error")
+	}
+	if _, err := store.failBriefingMessageOperation(context.Background(), "request-1", "failed"); err == nil {
+		t.Error("failBriefingMessageOperation() error = nil, want closed database error")
+	}
+	if _, err := store.listPreparations(context.Background()); err == nil {
+		t.Error("listPreparations() error = nil, want closed database error")
 	}
 }
 
