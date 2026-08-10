@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import type {
+  DerivationBriefing,
+  GetDerivationBriefingService,
+} from "../services/get-derivation-briefing-service";
 import type { SendDerivationBriefMessageService } from "../services/send-derivation-brief-message-service";
 import type { StartDerivationBriefingService } from "../services/start-derivation-briefing-service";
 
@@ -24,12 +28,14 @@ export function DerivationBriefingDialog({
   sourceExperimentId,
   startDerivationBriefing,
   sendDerivationBriefMessage,
+  getDerivationBriefing,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sourceExperimentId: string;
   startDerivationBriefing: StartDerivationBriefingService;
   sendDerivationBriefMessage: SendDerivationBriefMessageService;
+  getDerivationBriefing: GetDerivationBriefingService;
 }) {
   const [isStarting, setIsStarting] = useState(false);
   const [start, setStart] = useState<BriefingStart>();
@@ -43,9 +49,51 @@ export function DerivationBriefingDialog({
   const [isMessageInvalid, setIsMessageInvalid] = useState(false);
   const [isMessageSent, setIsMessageSent] = useState(false);
   const [sendOperationID, setSendOperationID] = useState<string>();
+  const [briefing, setBriefing] = useState<DerivationBriefing>();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<{
+    code: string;
+    message: string;
+  }>();
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const requestIDRef = useRef<string>();
   const startedForOpenRef = useRef(false);
+  const refreshGenerationRef = useRef(0);
+  const isRefreshingRef = useRef(false);
+
+  const refreshBriefing = useCallback(async () => {
+    if (!start || isRefreshingRef.current) return;
+
+    const generation = ++refreshGenerationRef.current;
+    isRefreshingRef.current = true;
+    setIsRefreshing(true);
+    setRefreshError(undefined);
+    try {
+      const response = await getDerivationBriefing(start.briefingSessionId);
+      if (generation !== refreshGenerationRef.current) return;
+      if (response.data) {
+        setBriefing(response.data);
+        return;
+      }
+      setRefreshError(
+        response.error ?? {
+          code: "UNKNOWN",
+          message: "壁打ち内容を取得できませんでした。",
+        },
+      );
+    } catch {
+      if (generation !== refreshGenerationRef.current) return;
+      setRefreshError({
+        code: "UNKNOWN",
+        message: "壁打ち内容を取得できませんでした。",
+      });
+    } finally {
+      if (generation === refreshGenerationRef.current) {
+        isRefreshingRef.current = false;
+        setIsRefreshing(false);
+      }
+    }
+  }, [getDerivationBriefing, start]);
 
   const begin = useCallback(async () => {
     if (isStarting) return;
@@ -79,6 +127,10 @@ export function DerivationBriefingDialog({
     }
   }, [isStarting, sourceExperimentId, startDerivationBriefing]);
 
+  useEffect(() => {
+    if (start) void refreshBriefing();
+  }, [refreshBriefing, start]);
+
   const retry = () => {
     requestIDRef.current = undefined;
     void begin();
@@ -109,6 +161,7 @@ export function DerivationBriefingDialog({
         setMessage("");
         setSendOperationID(response.data.operationId);
         setIsMessageSent(true);
+        await refreshBriefing();
         return;
       }
       setSendError(
@@ -140,6 +193,11 @@ export function DerivationBriefingDialog({
       setIsMessageInvalid(false);
       setIsMessageSent(false);
       setSendOperationID(undefined);
+      setBriefing(undefined);
+      setIsRefreshing(false);
+      isRefreshingRef.current = false;
+      setRefreshError(undefined);
+      refreshGenerationRef.current += 1;
       return;
     }
     if (startedForOpenRef.current) return;
@@ -205,6 +263,69 @@ export function DerivationBriefingDialog({
                 <p>開始操作ID: {start.operationId}</p>
               </AlertDescription>
             </Alert>
+            <section
+              aria-labelledby="derivation-briefing-content-title"
+              className="space-y-3"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2
+                  className="font-semibold"
+                  id="derivation-briefing-content-title"
+                >
+                  壁打ち内容
+                </h2>
+                <Button
+                  disabled={isRefreshing}
+                  id="reload-derivation-briefing-button"
+                  onClick={() => void refreshBriefing()}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  <RefreshCw
+                    className={isRefreshing ? "animate-spin" : undefined}
+                  />
+                  再読込
+                </Button>
+              </div>
+              {isRefreshing && (
+                <p id="derivation-briefing-refresh-pending" role="status">
+                  壁打ち内容を読み込んでいます…
+                </p>
+              )}
+              {refreshError && (
+                <Alert
+                  id="derivation-briefing-refresh-error"
+                  role="alert"
+                  variant="destructive"
+                >
+                  <AlertCircle />
+                  <AlertTitle>壁打ち内容を取得できません</AlertTitle>
+                  <AlertDescription className="space-y-3">
+                    <p>{refreshError.message}</p>
+                    {briefing?.lastConfirmedAt && (
+                      <p className="text-xs">
+                        前回確認: {briefing.lastConfirmedAt}
+                      </p>
+                    )}
+                    <Button
+                      onClick={() => void refreshBriefing()}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      もう一度試す
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              )}
+              {briefing && <DerivationBriefingContent briefing={briefing} />}
+              {!briefing && !isRefreshing && !refreshError && (
+                <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                  まだ壁打ち内容はありません。メッセージを送ると、ここに会話と提案が表示されます。
+                </p>
+              )}
+            </section>
             <form
               className="space-y-2"
               id="derivation-briefing-message-form"
@@ -273,5 +394,121 @@ export function DerivationBriefingDialog({
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function DerivationBriefingContent({
+  briefing,
+}: {
+  briefing: DerivationBriefing;
+}) {
+  const suggestion = briefing.latestSuggestion;
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <section
+        aria-labelledby="derivation-briefing-conversation-title"
+        className="space-y-2"
+      >
+        <h3 className="font-medium" id="derivation-briefing-conversation-title">
+          会話
+        </h3>
+        {briefing.messages.length === 0 ? (
+          <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+            会話はまだありません。
+          </p>
+        ) : (
+          <ol className="space-y-2" id="derivation-briefing-messages">
+            {briefing.messages.map((item) => (
+              <li
+                className="rounded-md border p-3 text-sm"
+                key={`${item.sequenceNo}-${item.createdAt}`}
+              >
+                <p className="font-medium">
+                  {item.role === "user" ? "あなた" : "アシスタント"}
+                </p>
+                <p className="mt-1 whitespace-pre-wrap break-words">
+                  {item.content}
+                </p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {item.createdAt}
+                </p>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+      <section
+        aria-labelledby="derivation-briefing-suggestion-title"
+        className="space-y-2"
+      >
+        <h3 className="font-medium" id="derivation-briefing-suggestion-title">
+          差分案
+        </h3>
+        {!suggestion ? (
+          <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+            差分案はまだありません。
+          </p>
+        ) : (
+          <div
+            className="space-y-3 rounded-md border p-3 text-sm"
+            id="derivation-briefing-suggestion"
+          >
+            <p className="font-medium">{suggestion.purpose}</p>
+            <dl className="space-y-2">
+              <BriefingField label="判断" value={suggestion.decision} />
+              <BriefingField label="仮説" value={suggestion.hypothesis} />
+              <BriefingField
+                label="評価基準"
+                value={suggestion.evaluationCriteria}
+              />
+              <BriefingField
+                label="環境条件"
+                value={suggestion.environmentConditions}
+              />
+              <BriefingField label="初期入力" value={suggestion.initialInput} />
+              <BriefingField
+                label="成功基準"
+                value={suggestion.successCriteria}
+              />
+              <BriefingField
+                label="必須条件"
+                value={suggestion.requiredConditions}
+              />
+            </dl>
+            {suggestion.candidatePrompts.length > 0 && (
+              <div>
+                <p className="font-medium">候補prompt</p>
+                <ul className="mt-1 list-disc pl-5">
+                  {suggestion.candidatePrompts.map((prompt) => (
+                    <li key={prompt}>{prompt}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div
+              className="rounded-md bg-muted/60 p-3"
+              id="derivation-briefing-open-question"
+            >
+              <p className="font-medium">未解決事項</p>
+              <p className="mt-1 whitespace-pre-wrap break-words">
+                {suggestion.openQuestion || "未解決事項はありません。"}
+              </p>
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function BriefingField({ label, value }: { label: string; value?: string }) {
+  if (!value) return null;
+  return (
+    <div>
+      <dt className="font-medium">{label}</dt>
+      <dd className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">
+        {value}
+      </dd>
+    </div>
   );
 }
