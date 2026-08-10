@@ -63,7 +63,14 @@ func main() {
 	experimentEvaluationsHandler := wailshandler.NewExperimentEvaluationsHandler(usecase.NewStartRunEvaluation(store, docker.NewCodexRunEvaluator()), appLogger)
 	evaluationDetailsHandler := wailshandler.NewExperimentEvaluationDetailsHandler(usecase.NewGetEvaluationDetail(store), appLogger)
 	experimentRunDetailsHandler := wailshandler.NewExperimentRunDetailsHandler(usecase.NewGetRunDetail(store), appLogger)
-	preparationsHandler := wailshandler.NewPreparationsHandler(usecase.NewListPreparations(store), usecase.NewGetPreparation(store), appLogger)
+	workingRoot, err := os.Getwd()
+	if err != nil {
+		appLogger.Error(context.Background(), "find preparation working root", err)
+
+		return
+	}
+	preparationAdapter := acp.NewCodexPreparationAdapter(workingRoot)
+	preparationsHandler := wailshandler.NewPreparationsHandlerWithStart(usecase.NewListPreparations(store), usecase.NewGetPreparation(store), usecase.NewStartPreparation(store, preparationAdapter, preparationAdapter), appLogger)
 	insightsHandler := wailshandler.NewInsightsHandlerWithCreate(usecase.NewGetInsightWorkspace(store), usecase.NewCreateInsight(store), appLogger)
 	briefingAdapter := acp.NewCodexBriefingAdapter(filepath.Join(configDirectory, applicationDirectoryName))
 	derivationBriefingsHandler := wailshandler.NewDerivationBriefingsHandler(

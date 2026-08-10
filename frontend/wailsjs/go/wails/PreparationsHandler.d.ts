@@ -5,3 +5,5 @@ import {wails} from '../models';
 export function GetPreparation(arg1:string):Promise<wails.GetPreparationResponse>;
 
 export function ListPreparations():Promise<wails.ListPreparationsResponse>;
+
+export function StartPreparation(arg1:string,arg2:string):Promise<wails.StartPreparationResponse>;

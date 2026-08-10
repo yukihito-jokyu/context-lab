@@ -3154,6 +3154,52 @@ export namespace wails {
 		    return a;
 		}
 	}
+	export class StartPreparationData {
+	    preparationId: string;
+	    state: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new StartPreparationData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.preparationId = source["preparationId"];
+	        this.state = source["state"];
+	    }
+	}
+	export class StartPreparationResponse {
+	    data?: StartPreparationData;
+	    error?: ErrorResponse;
+	
+	    static createFrom(source: any = {}) {
+	        return new StartPreparationResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.data = this.convertValues(source["data"], StartPreparationData);
+	        this.error = this.convertValues(source["error"], ErrorResponse);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class StartRunEvaluationData {
 	    runId: string;
 	    evaluationId: string;

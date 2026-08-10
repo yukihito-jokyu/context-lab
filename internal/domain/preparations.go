@@ -49,3 +49,41 @@ type PreparationReconciliation struct {
 	State          string
 	LastObservedAt time.Time
 }
+
+// EnvironmentPreparationStart は環境準備開始操作の安全な状態。
+type EnvironmentPreparationStart struct {
+	RequestID     string
+	PreparationID string
+	Scope         string
+	State         string
+	FailureCode   string
+}
+
+const (
+	// EnvironmentPreparationStateStarting は開始記録直後の状態。
+	EnvironmentPreparationStateStarting = "starting"
+	// EnvironmentPreparationStateRunning はACP照合中の状態。
+	EnvironmentPreparationStateRunning = "running"
+	// EnvironmentPreparationStateCompleted は候補の保存済み状態。
+	EnvironmentPreparationStateCompleted = "completed"
+	// EnvironmentPreparationStateFailed は開始または照合の失敗状態。
+	EnvironmentPreparationStateFailed = "failed"
+)
+
+// EnvironmentPreparationResult はACPが返す安全な環境準備結果。
+type EnvironmentPreparationResult struct {
+	Candidates  []EnvironmentPreparationCandidate
+	Diagnostics []EnvironmentPreparationDiagnostic
+}
+
+// EnvironmentPreparationCandidate は保存前の安全な環境候補。
+type EnvironmentPreparationCandidate struct {
+	EnvironmentConditions string
+	Summary               string
+}
+
+// EnvironmentPreparationDiagnostic は保存前の安全な診断情報。
+type EnvironmentPreparationDiagnostic struct {
+	Code        string
+	SafeSummary string
+}

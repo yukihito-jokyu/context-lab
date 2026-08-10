@@ -60,6 +60,11 @@ type GetPreparationResponse = Record<string, unknown> & {
   delayMs?: number;
   result?: Record<string, unknown>;
 };
+type StartPreparationResponse = Record<string, unknown> & {
+  delayMs?: number;
+  result?: Record<string, unknown>;
+  throwMessage?: string;
+};
 
 declare global {
   interface Window {
@@ -128,6 +133,10 @@ declare global {
       statement: string;
       applicabilityConditions: string;
       verificationGaps: string;
+    }>;
+    __startPreparationRequests: Array<{
+      requestId: string;
+      scope: string;
     }>;
   }
 }
@@ -618,6 +627,41 @@ async function installGetPreparationMock(
       window.go = window.go || { wails: {} };
       window.go.wails.PreparationsHandler = window.go.wails.PreparationsHandler || {};
       window.go.wails.PreparationsHandler.GetPreparation = () => {
+        const response = responses[Math.min(callCount, responses.length - 1)];
+        callCount += 1;
+        if (response.throwMessage) {
+          return Promise.reject(new Error(response.throwMessage));
+        }
+        if (response.delayMs) {
+          return new Promise((resolve) => {
+            window.setTimeout(() => resolve(response.result), response.delayMs);
+          });
+        }
+        return Promise.resolve(response);
+      };
+    `,
+  });
+}
+
+async function installStartPreparationMock(
+  page: Page,
+  responses: StartPreparationResponse[],
+) {
+  await page.addInitScript({
+    content: `
+      const responses = ${JSON.stringify(responses)};
+      let callCount = 0;
+      window.__startPreparationRequests = JSON.parse(
+        window.localStorage.getItem("startPreparationRequests") || "[]",
+      );
+      window.go = window.go || { wails: {} };
+      window.go.wails.PreparationsHandler = window.go.wails.PreparationsHandler || {};
+      window.go.wails.PreparationsHandler.StartPreparation = (requestId, scope) => {
+        window.__startPreparationRequests.push({ requestId, scope });
+        window.localStorage.setItem(
+          "startPreparationRequests",
+          JSON.stringify(window.__startPreparationRequests),
+        );
         const response = responses[Math.min(callCount, responses.length - 1)];
         callCount += 1;
         if (response.delayMs) {
@@ -3036,6 +3080,181 @@ test("環境準備sessionの空状態を表示する", async ({ page }) => {
 
   await expect(page.locator("#preparation-list-empty")).toBeVisible();
   await expect(page.getByRole("button", { name: "再読込" })).toBeVisible();
+});
+
+test("環境準備の対象範囲を入力検証する", async ({ page }) => {
+  await installListPreparationsMock(page, [{ data: { preparations: [] } }]);
+  await page.goto("/preparations");
+
+  const scope = page.getByLabel("対象範囲（ワークスペースからの相対パス）");
+  await scope.fill("   ");
+  await page.getByRole("button", { name: "環境準備を開始" }).click();
+  await expect(page.locator("#start-preparation-error")).toContainText(
+    "対象範囲を入力してください。",
+  );
+
+  await scope.fill("/tmp");
+  await page.getByRole("button", { name: "環境準備を開始" }).click();
+  await expect(page.locator("#start-preparation-error")).toContainText(
+    "ワークスペースからの相対パス",
+  );
+});
+
+test("環境準備を開始中に重複操作を防ぎ、成功後に詳細を表示する", async ({
+  page,
+}) => {
+  await installListPreparationsMock(page, [{ data: { preparations: [] } }]);
+  await installStartPreparationMock(page, [
+    {
+      delayMs: 200,
+      result: {
+        data: { preparationId: "PREP-START-001", state: "completed" },
+      },
+    },
+  ]);
+  await installGetPreparationMock(page, [
+    {
+      data: {
+        preparationId: "PREP-START-001",
+        state: "completed",
+        startedAt: confirmedAt,
+        lastObservedAt: confirmedAt,
+        candidates: [],
+        diagnostics: [],
+        reconciliation: { state: "confirmed", lastObservedAt: confirmedAt },
+      },
+    },
+  ]);
+  await page.goto("/preparations");
+
+  await page.getByRole("button", { name: "環境準備を開始" }).click();
+  await expect(
+    page.getByRole("button", { name: "環境準備を開始しています…" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByLabel("対象範囲（ワークスペースからの相対パス）"),
+  ).toBeDisabled();
+  await expect(page).toHaveURL("/preparations/PREP-START-001");
+  await expect(page.getByText("PREP-START-001", { exact: true })).toBeVisible();
+});
+
+test("環境準備の開始終端失敗は新しいrequest IDで再試行する", async ({
+  page,
+}) => {
+  await installListPreparationsMock(page, [{ data: { preparations: [] } }]);
+  await installStartPreparationMock(page, [
+    {
+      error: {
+        code: "ACP_NOT_READY",
+        message: "環境準備の接続を確認してください。",
+      },
+    },
+    { data: { preparationId: "PREP-START-002", state: "completed" } },
+  ]);
+  await installGetPreparationMock(page, [
+    {
+      data: {
+        preparationId: "PREP-START-002",
+        state: "completed",
+        startedAt: confirmedAt,
+        lastObservedAt: confirmedAt,
+        candidates: [],
+        diagnostics: [],
+        reconciliation: { state: "confirmed", lastObservedAt: confirmedAt },
+      },
+    },
+  ]);
+  await page.goto("/preparations");
+
+  await page.getByRole("button", { name: "環境準備を開始" }).click();
+  await expect(page.locator("#start-preparation-error")).toContainText(
+    "環境準備の接続を確認してください。",
+  );
+  await page.getByRole("button", { name: "環境準備を開始" }).click();
+  await expect(page).toHaveURL("/preparations/PREP-START-002");
+  const requests = await page.evaluate(() =>
+    JSON.parse(window.localStorage.getItem("startPreparationRequests") || "[]"),
+  );
+  expect(requests).toHaveLength(2);
+  expect(requests[0].requestId).not.toBe(requests[1].requestId);
+  expect(requests[0].scope).toBe(".");
+});
+
+test("環境準備の通信失敗は同じrequest IDで再送する", async ({ page }) => {
+  await installListPreparationsMock(page, [{ data: { preparations: [] } }]);
+  await installStartPreparationMock(page, [
+    { throwMessage: "connection lost" },
+    { data: { preparationId: "PREP-START-003", state: "completed" } },
+  ]);
+  await installGetPreparationMock(page, [
+    {
+      data: {
+        preparationId: "PREP-START-003",
+        state: "completed",
+        startedAt: confirmedAt,
+        lastObservedAt: confirmedAt,
+        candidates: [],
+        diagnostics: [],
+        reconciliation: { state: "confirmed", lastObservedAt: confirmedAt },
+      },
+    },
+  ]);
+  await page.goto("/preparations");
+
+  await page.getByRole("button", { name: "環境準備を開始" }).click();
+  await expect(page.locator("#start-preparation-error")).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.localStorage.getItem("startPreparationPendingRequest"),
+      ),
+    )
+    .not.toBeNull();
+  await page.getByRole("button", { name: "環境準備を開始" }).click();
+  await expect(page).toHaveURL("/preparations/PREP-START-003");
+  const requests = await page.evaluate(() =>
+    JSON.parse(window.localStorage.getItem("startPreparationRequests") || "[]"),
+  );
+  expect(requests).toHaveLength(2);
+  expect(requests[0].requestId).toBe(requests[1].requestId);
+});
+
+test("環境準備の対象範囲を変更すると新しいrequest IDを使う", async ({
+  page,
+}) => {
+  await installListPreparationsMock(page, [{ data: { preparations: [] } }]);
+  await installStartPreparationMock(page, [
+    { throwMessage: "connection lost" },
+    { data: { preparationId: "PREP-START-004", state: "completed" } },
+  ]);
+  await installGetPreparationMock(page, [
+    {
+      data: {
+        preparationId: "PREP-START-004",
+        state: "completed",
+        startedAt: confirmedAt,
+        lastObservedAt: confirmedAt,
+        candidates: [],
+        diagnostics: [],
+        reconciliation: { state: "confirmed", lastObservedAt: confirmedAt },
+      },
+    },
+  ]);
+  await page.goto("/preparations");
+
+  await page.getByRole("button", { name: "環境準備を開始" }).click();
+  await expect(page.locator("#start-preparation-error")).toBeVisible();
+  await page
+    .getByLabel("対象範囲（ワークスペースからの相対パス）")
+    .fill("frontend");
+  await page.getByRole("button", { name: "環境準備を開始" }).click();
+  await expect(page).toHaveURL("/preparations/PREP-START-004");
+  const requests = await page.evaluate(() =>
+    JSON.parse(window.localStorage.getItem("startPreparationRequests") || "[]"),
+  );
+  expect(requests).toHaveLength(2);
+  expect(requests[0].requestId).not.toBe(requests[1].requestId);
+  expect(requests[1].scope).toBe("frontend");
 });
 
 test("環境準備sessionを選択して詳細を表示する", async ({ page }) => {

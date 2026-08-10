@@ -9,3 +9,7 @@ export function GetPreparation(arg1) {
 export function ListPreparations() {
   return window['go']['wails']['PreparationsHandler']['ListPreparations']();
 }
+
+export function StartPreparation(arg1, arg2) {
+  return window['go']['wails']['PreparationsHandler']['StartPreparation'](arg1, arg2);
+}

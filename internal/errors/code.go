@@ -9,6 +9,11 @@ const (
 	CodePreparationRequestInvalid                Code = "PREPARATION_REQUEST_INVALID"
 	CodePreparationNotFound                      Code = "PREPARATION_NOT_FOUND"
 	CodePreparationUnavailable                   Code = "PREPARATION_UNAVAILABLE"
+	CodePreparationStartRequestInvalid           Code = "PREPARATION_START_REQUEST_INVALID"
+	CodePreparationScopeInvalid                  Code = "PREPARATION_SCOPE_INVALID"
+	CodePreparationStartPending                  Code = "PREPARATION_START_PENDING"
+	CodePreparationStartRequestConflict          Code = "PREPARATION_START_REQUEST_CONFLICT"
+	CodePreparationStartUnavailable              Code = "PREPARATION_START_UNAVAILABLE"
 	CodeBriefingRequestInvalid                   Code = "INVALID_REQUEST"
 	CodeACPNotReady                              Code = "ACP_NOT_READY"
 	CodeBriefingStartFailed                      Code = "EXPERIMENT_BRIEFING_START_UNAVAILABLE"
@@ -109,6 +114,11 @@ var defaultMessages = map[Code]message{
 	CodePreparationRequestInvalid:                "準備sessionの指定が不正です",
 	CodePreparationNotFound:                      "準備sessionが見つかりません",
 	CodePreparationUnavailable:                   "準備sessionを取得できませんでした",
+	CodePreparationStartRequestInvalid:           "環境準備の開始要求が不正です",
+	CodePreparationScopeInvalid:                  "環境準備の対象範囲が不正です",
+	CodePreparationStartPending:                  "この範囲の環境準備はすでに実行中です",
+	CodePreparationStartRequestConflict:          "この開始要求は別の範囲に使用されています",
+	CodePreparationStartUnavailable:              "環境準備を開始できませんでした",
 	CodeBriefingRequestInvalid:                   "開始要求が不正です",
 	CodeACPNotReady:                              "実験ブリーフを開始する準備ができていません",
 	CodeBriefingStartFailed:                      "実験ブリーフを開始できませんでした",

@@ -2,6 +2,7 @@ import { EnvironmentPreparationDetailPage } from "@/features/environment-prepara
 import { EnvironmentPreparationListPage } from "@/features/environment-preparation/EnvironmentPreparationListPage";
 import { getPreparation } from "@/features/environment-preparation/services/get-preparation-service";
 import { listPreparations } from "@/features/environment-preparation/services/list-preparations-service";
+import { startPreparation } from "@/features/environment-preparation/services/start-preparation-service";
 import { ComparisonPage } from "@/features/experiments/ComparisonPage";
 import { CreateDerivedExperimentPage } from "@/features/experiments/CreateDerivedExperimentPage";
 import { DerivationSourcePage } from "@/features/experiments/DerivationSourcePage";
@@ -62,7 +63,10 @@ export default function App() {
 
   if (window.location.pathname === "/preparations") {
     return (
-      <EnvironmentPreparationListPage listPreparations={listPreparations} />
+      <EnvironmentPreparationListPage
+        listPreparations={listPreparations}
+        startPreparation={startPreparation}
+      />
     );
   }
 

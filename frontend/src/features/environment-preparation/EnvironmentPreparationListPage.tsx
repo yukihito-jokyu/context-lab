@@ -13,14 +13,17 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { formatExperimentDateTime } from "../experiments/lib/format-experiment-date-time";
+import { StartPreparationPanel } from "./StartPreparationPanel";
 import type {
   ListPreparationsResponse,
   ListPreparationsService,
   PreparationListItem,
 } from "./services/list-preparations-service";
+import type { StartPreparationService } from "./services/start-preparation-service";
 
 type EnvironmentPreparationListPageProps = {
   listPreparations: ListPreparationsService;
+  startPreparation: StartPreparationService;
 };
 
 const stateBadgeVariant = (state: string) => {
@@ -69,6 +72,7 @@ function PreparationSessionCard({
 
 export function EnvironmentPreparationListPage({
   listPreparations,
+  startPreparation,
 }: EnvironmentPreparationListPageProps) {
   const [data, setData] = useState<ListPreparationsResponse["data"]>();
   const [isLoading, setIsLoading] = useState(true);
@@ -117,6 +121,15 @@ export function EnvironmentPreparationListPage({
             </p>
           </div>
         </header>
+
+        <StartPreparationPanel
+          onStarted={(preparation) =>
+            window.location.assign(
+              `/preparations/${encodeURIComponent(preparation.preparationId)}`,
+            )
+          }
+          startPreparation={startPreparation}
+        />
 
         <Alert>
           <AlertDescription>

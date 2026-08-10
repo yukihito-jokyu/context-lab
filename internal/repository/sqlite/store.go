@@ -33,14 +33,16 @@ var readMigrationDirectory = func() ([]fs.DirEntry, error) {
 
 // Store はSQLiteの実験読み出しadapter。
 type Store struct {
-	db                           *sql.DB
-	beginBriefingTransaction     func(context.Context) (briefingTransaction, error)
-	failBriefingMessageOperation func(context.Context, string, string) (sql.Result, error)
-	listPreparations             func(context.Context) (preparationRows, error)
-	getPreparation               func(context.Context, string) (domain.PreparationDetail, bool, error)
-	briefingMessageMu            sync.Mutex
-	derivationBriefingMessageMu  sync.Mutex
-	listMu                       sync.Mutex
+	db                             *sql.DB
+	beginBriefingTransaction       func(context.Context) (briefingTransaction, error)
+	failBriefingMessageOperation   func(context.Context, string, string) (sql.Result, error)
+	listPreparations               func(context.Context) (preparationRows, error)
+	getPreparation                 func(context.Context, string) (domain.PreparationDetail, bool, error)
+	findPreparationStartOverride   func(context.Context, string) (domain.EnvironmentPreparationStart, bool, error)
+	insertPreparationStartOverride func(context.Context, domain.EnvironmentPreparationStart) error
+	briefingMessageMu              sync.Mutex
+	derivationBriefingMessageMu    sync.Mutex
+	listMu                         sync.Mutex
 }
 
 // Open は管理ディレクトリとSQLiteスキーマを初期化。
