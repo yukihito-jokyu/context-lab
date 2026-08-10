@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/yukihito-jokyu/context-lab/internal/domain"
 	apperr "github.com/yukihito-jokyu/context-lab/internal/errors"
@@ -40,7 +41,7 @@ func TestDerivationBriefingsHandlerStartDerivationBriefing(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			appLogger := &derivationBriefingHandlerLogger{}
-			got := NewDerivationBriefingsHandler(tt.command, appLogger).StartDerivationBriefing("request-1", "source-1")
+			got := NewDerivationBriefingsHandler(tt.command, nil, nil, appLogger).StartDerivationBriefing("request-1", "source-1")
 			if tt.wantCode == "" {
 				if got.Data == nil || got.Data.SourceExperimentID != "source-1" || got.Data.BriefingSessionID != "session-1" {
 					t.Errorf("Data = %+v, want derivation briefing identifiers", got.Data)
@@ -61,7 +62,7 @@ func TestDerivationBriefingsHandlerStartDerivationBriefing(t *testing.T) {
 // DerivationBriefingsHandlerの未知エラー変換を確認。
 func TestDerivationBriefingsHandlerFailureFallback(t *testing.T) {
 	appLogger := &derivationBriefingHandlerLogger{}
-	got := NewDerivationBriefingsHandler(nil, appLogger).fail(context.Background(), errors.New("private credential"))
+	got := NewDerivationBriefingsHandler(nil, nil, nil, appLogger).fail(context.Background(), errors.New("private credential"))
 	if got.Error == nil || got.Error.Code != string(apperr.CodeUnexpected) {
 		t.Errorf("Error = %+v, want unexpected safe error", got.Error)
 	}
@@ -101,7 +102,7 @@ func TestDerivationBriefingsHandlerSendDerivationBriefMessage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			appLogger := &derivationBriefingHandlerLogger{}
-			handler := NewDerivationBriefingsHandler(nil, appLogger, tt.command)
+			handler := NewDerivationBriefingsHandler(nil, tt.command, nil, appLogger)
 			got := handler.SendDerivationBriefMessage("request-1", "session-1", "比較したい")
 			if tt.wantCode == "" {
 				if got.Data == nil || got.Data.OperationID == "" {
@@ -123,7 +124,7 @@ func TestDerivationBriefingsHandlerSendDerivationBriefMessage(t *testing.T) {
 // DerivationBriefingsHandlerの派生会話送信未知エラー変換を確認。
 func TestDerivationBriefingsHandlerMessageFailureFallback(t *testing.T) {
 	appLogger := &derivationBriefingHandlerLogger{}
-	got := NewDerivationBriefingsHandler(nil, appLogger).failMessage(context.Background(), errors.New("private credential"))
+	got := NewDerivationBriefingsHandler(nil, nil, nil, appLogger).failMessage(context.Background(), errors.New("private credential"))
 	if got.Error == nil || got.Error.Code != string(apperr.CodeUnexpected) {
 		t.Errorf("Error = %+v, want unexpected safe error", got.Error)
 	}
@@ -132,11 +133,118 @@ func TestDerivationBriefingsHandlerMessageFailureFallback(t *testing.T) {
 	}
 }
 
+// DerivationBriefingsHandlerの派生会話再読込を確認。
+func TestDerivationBriefingsHandlerGetDerivationBriefing(t *testing.T) {
+	confirmedAt := time.Date(2026, time.August, 10, 1, 2, 3, 0, time.FixedZone("JST", 9*60*60))
+	tests := []struct {
+		name     string
+		reader   derivationBriefingHandlerReader
+		session  string
+		wantCode apperr.Code
+		wantData bool
+	}{
+		{
+			name:    "会話と最新版提案を画面DTOへ変換する",
+			session: "session-1",
+			reader: derivationBriefingHandlerReader{
+				found: true,
+				briefing: domain.DerivationBriefing{
+					State: "started",
+					Messages: []domain.DerivationBriefingMessage{{
+						Role:       "user",
+						Content:    "比較する",
+						SequenceNo: 1,
+						CreatedAt:  confirmedAt,
+					}},
+					LatestSuggestion: &domain.DerivationBriefingSuggestion{
+						ID:        "suggestion-1",
+						VersionNo: 2,
+						CreatedAt: confirmedAt,
+					},
+					LastConfirmedAt: confirmedAt,
+				},
+			},
+			wantData: true,
+		},
+		{
+			name:     "未知sessionを安全なコードへ変換する",
+			session:  "missing",
+			wantCode: apperr.CodeDerivationBriefingNotFound,
+		},
+		{
+			name: "内部エラーを安全なコードへ変換する",
+			reader: derivationBriefingHandlerReader{
+				err: errors.New("private sqlite"),
+			},
+			session:  "session-2",
+			wantCode: apperr.CodeDerivationBriefingUnavailable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			appLogger := &derivationBriefingHandlerLogger{}
+			handler := NewDerivationBriefingsHandler(nil, nil, usecase.NewGetDerivationBriefing(tt.reader), appLogger)
+			got := handler.GetDerivationBriefing(tt.session)
+			if gotData := got.Data != nil; gotData != tt.wantData {
+				t.Fatalf("Data available = %v, want %v", gotData, tt.wantData)
+			}
+			if tt.wantData {
+				if got := got.Data.Messages; len(got) != 1 || got[0].Content != "比較する" {
+					t.Errorf("Messages = %+v, want one message", got)
+				}
+				if got := got.Data.LatestSuggestion; got == nil || got.ID != "suggestion-1" || got.VersionNo != 2 {
+					t.Errorf("LatestSuggestion = %+v, want suggestion-1 version 2", got)
+				}
+				if got := got.Data.LastConfirmedAt; !got.Equal(confirmedAt.UTC()) || got.Location() != time.UTC {
+					t.Errorf("LastConfirmedAt = %s, want UTC %s", got, confirmedAt.UTC())
+				}
+
+				return
+			}
+			if got.Error == nil || got.Error.Code != string(tt.wantCode) {
+				t.Errorf("Error = %+v, want %q", got.Error, tt.wantCode)
+			}
+			if appLogger.code != string(tt.wantCode) || appLogger.operation != "get_derivation_briefing" {
+				t.Errorf("safe error log = (%q, %q)", appLogger.code, appLogger.operation)
+			}
+		})
+	}
+}
+
+// DerivationBriefingsHandlerの派生会話再読込依存欠落を確認。
+func TestDerivationBriefingsHandlerGetDerivationBriefingMissingDependency(t *testing.T) {
+	appLogger := &derivationBriefingHandlerLogger{}
+	got := NewDerivationBriefingsHandler(nil, nil, nil, appLogger).GetDerivationBriefing("session-1")
+	if got.Error == nil || got.Error.Code != string(apperr.CodeDerivationBriefingUnavailable) {
+		t.Errorf("Error = %+v, want %q", got.Error, apperr.CodeDerivationBriefingUnavailable)
+	}
+}
+
+// 派生実験提案DTOの空状態変換を確認。
+func TestToDerivationBriefingSuggestionResponseNil(t *testing.T) {
+	if got := toDerivationBriefingSuggestionResponse(nil); got != nil {
+		t.Errorf("toDerivationBriefingSuggestionResponse(nil) = %+v, want nil", got)
+	}
+}
+
 // derivationBriefingHandlerStore はhandler用開始記録portのtest double。
 type derivationBriefingHandlerStore struct{ beginErr error }
 
 // derivationBriefingMessageHandlerStore はhandler用会話送信記録portのtest double。
 type derivationBriefingMessageHandlerStore struct{ beginErr error }
+
+// derivationBriefingHandlerReader はhandler用派生実験ブリーフ読み出しportのtest double。
+type derivationBriefingHandlerReader struct {
+	briefing domain.DerivationBriefing
+	found    bool
+	err      error
+}
+
+// GetDerivationBriefing は指定済み派生実験ブリーフを返す。
+func (r derivationBriefingHandlerReader) GetDerivationBriefing(context.Context, string) (domain.DerivationBriefing, bool, error) {
+	return r.briefing, r.found, r.err
+}
 
 // BeginDerivationBriefMessage は指定済み送信開始結果を返す。
 func (s *derivationBriefingMessageHandlerStore) BeginDerivationBriefMessage(context.Context, string, string) (domain.DerivationBriefingMessageOperation, bool, error) {

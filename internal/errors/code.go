@@ -68,6 +68,9 @@ const (
 	CodeDerivedExperimentUnavailable             Code = "DERIVED_EXPERIMENT_UNAVAILABLE"
 	CodeDerivationBriefingStartFailed            Code = "DERIVATION_BRIEFING_START_UNAVAILABLE"
 	CodeDerivationBriefingPending                Code = "DERIVATION_BRIEFING_PENDING"
+	CodeDerivationBriefingInvalid                Code = "DERIVATION_BRIEFING_INVALID"
+	CodeDerivationBriefingNotFound               Code = "DERIVATION_BRIEFING_NOT_FOUND"
+	CodeDerivationBriefingUnavailable            Code = "DERIVATION_BRIEFING_UNAVAILABLE"
 	CodeDerivationBriefingMessageInvalid         Code = "DERIVATION_BRIEFING_MESSAGE_INVALID"
 	CodeDerivationBriefingMessageNotFound        Code = "DERIVATION_BRIEFING_MESSAGE_NOT_FOUND"
 	CodeDerivationBriefingMessageNotActive       Code = "DERIVATION_BRIEFING_MESSAGE_NOT_ACTIVE"
@@ -142,6 +145,9 @@ var defaultMessages = map[Code]message{
 	CodeExperimentComparisonUnavailable:          "実験比較を取得できませんでした",
 	CodeDerivationBriefingStartFailed:            "派生実験の壁打ちを開始できませんでした",
 	CodeDerivationBriefingPending:                "派生実験の壁打ち開始を確認中です",
+	CodeDerivationBriefingInvalid:                "派生実験の壁打ち取得要求が不正です",
+	CodeDerivationBriefingNotFound:               "派生実験の壁打ちが見つかりません",
+	CodeDerivationBriefingUnavailable:            "派生実験の壁打ちを取得できませんでした",
 	CodeDerivationBriefingMessageInvalid:         "派生実験の壁打ちメッセージが不正です",
 	CodeDerivationBriefingMessageNotFound:        "派生実験の壁打ちが見つかりません",
 	CodeDerivationBriefingMessageNotActive:       "派生実験の壁打ちは送信できる状態ではありません",
