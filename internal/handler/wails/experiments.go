@@ -57,6 +57,110 @@ type CreateExperimentFromBriefData struct {
 	State        string `json:"state"`
 }
 
+// GetExperimentPreparationResponse は実験準備queryの成功または失敗結果。
+type GetExperimentPreparationResponse struct {
+	Data  *GetExperimentPreparationData `json:"data,omitempty"`
+	Error *ErrorResponse                `json:"error,omitempty"`
+}
+
+// GetExperimentPreparationData は画面へ返す準備中実験の編集条件。
+type GetExperimentPreparationData struct {
+	ExperimentID          string                                      `json:"experimentId"`
+	State                 string                                      `json:"state"`
+	Purpose               string                                      `json:"purpose"`
+	Hypothesis            *string                                     `json:"hypothesis,omitempty"`
+	EnvironmentConditions string                                      `json:"environmentConditions"`
+	InitialInput          string                                      `json:"initialInput"`
+	Prompts               []ExperimentPreparationPromptResponse       `json:"prompts"`
+	EvaluationAxes        string                                      `json:"evaluationAxes"`
+	Source                ExperimentPreparationSourceResponse         `json:"source"`
+	RequiredFields        ExperimentPreparationRequiredFieldsResponse `json:"requiredFields"`
+	LastConfirmedAt       time.Time                                   `json:"lastConfirmedAt"`
+}
+
+// ExperimentPreparationPromptResponse は画面表示用prompt。
+type ExperimentPreparationPromptResponse struct {
+	SequenceNo int    `json:"sequenceNo"`
+	Content    string `json:"content"`
+}
+
+// ExperimentPreparationSourceResponse は採用元の安全な表示用情報。
+type ExperimentPreparationSourceResponse struct {
+	State     string `json:"state"`
+	VersionID string `json:"versionId"`
+}
+
+// ExperimentPreparationRequiredFieldsResponse は必須入力の充足状態。
+type ExperimentPreparationRequiredFieldsResponse struct {
+	Purpose               bool `json:"purpose"`
+	EnvironmentConditions bool `json:"environmentConditions"`
+	InitialInput          bool `json:"initialInput"`
+	Prompts               bool `json:"prompts"`
+	EvaluationAxes        bool `json:"evaluationAxes"`
+}
+
+// ExperimentPreparationsHandler は実験準備queryのWails binding。
+type ExperimentPreparationsHandler struct {
+	getExperimentPreparation *usecase.GetExperimentPreparation
+	logger                   logger.Logger
+}
+
+// NewExperimentPreparationsHandler は実験準備bindingを生成。
+func NewExperimentPreparationsHandler(getExperimentPreparation *usecase.GetExperimentPreparation, appLogger logger.Logger) *ExperimentPreparationsHandler {
+	return &ExperimentPreparationsHandler{getExperimentPreparation: getExperimentPreparation, logger: appLogger}
+}
+
+// GetExperimentPreparation は準備中実験を画面向けDTOで返す。
+func (h *ExperimentPreparationsHandler) GetExperimentPreparation(experimentID string) GetExperimentPreparationResponse {
+	ctx := context.Background()
+	h.logger.Debug(ctx, "get experiment preparation called")
+
+	preparation, err := h.getExperimentPreparation.Execute(ctx, experimentID)
+	if err != nil {
+		response := failGetExperimentPreparation(err)
+		h.logger.ErrorCode(ctx, "get experiment preparation failed", response.Error.Code, slog.String("operation", "get_experiment_preparation"))
+
+		return response
+	}
+
+	data := toGetExperimentPreparationData(preparation)
+
+	return GetExperimentPreparationResponse{Data: &data}
+}
+
+// failGetExperimentPreparation は内部エラーを安全な画面エラーへ変換。
+func failGetExperimentPreparation(err error) GetExperimentPreparationResponse {
+	appErr := apperr.As(err)
+	if appErr == nil {
+		appErr = apperr.NewUnexpected(err)
+	}
+
+	return GetExperimentPreparationResponse{Error: &ErrorResponse{Code: string(appErr.Code), Message: appErr.Error()}}
+}
+
+// toGetExperimentPreparationData はdomain実験準備を画面DTOへ変換。
+func toGetExperimentPreparationData(preparation domain.ExperimentPreparation) GetExperimentPreparationData {
+	prompts := make([]ExperimentPreparationPromptResponse, 0, len(preparation.Prompts))
+	for _, prompt := range preparation.Prompts {
+		prompts = append(prompts, ExperimentPreparationPromptResponse{SequenceNo: prompt.SequenceNo, Content: prompt.Content})
+	}
+	required := preparation.RequiredFields()
+
+	return GetExperimentPreparationData{
+		ExperimentID:          preparation.ExperimentID,
+		State:                 preparation.State,
+		Purpose:               preparation.Purpose,
+		Hypothesis:            preparation.Hypothesis,
+		EnvironmentConditions: preparation.EnvironmentConditions,
+		InitialInput:          preparation.InitialInput,
+		Prompts:               prompts,
+		EvaluationAxes:        preparation.EvaluationAxes,
+		Source:                ExperimentPreparationSourceResponse{State: preparation.Source.State, VersionID: preparation.Source.VersionID},
+		RequiredFields:        ExperimentPreparationRequiredFieldsResponse{Purpose: required.Purpose, EnvironmentConditions: required.EnvironmentConditions, InitialInput: required.InitialInput, Prompts: required.Prompts, EvaluationAxes: required.EvaluationAxes},
+		LastConfirmedAt:       preparation.LastConfirmedAt.UTC(),
+	}
+}
+
 // ExperimentBriefingsHandler は実験ブリーフ開始のWails binding。
 type ExperimentBriefingsHandler struct {
 	startExperimentBriefing    *usecase.StartExperimentBriefing

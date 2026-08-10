@@ -457,6 +457,116 @@ func TestExperimentBriefingsHandlerGetExperimentBriefing(t *testing.T) {
 	}
 }
 
+// Wails実験準備queryの成功と安全な失敗返却。
+func TestExperimentPreparationsHandlerGetExperimentPreparation(t *testing.T) {
+	confirmedAt := time.Date(2026, time.August, 9, 1, 2, 3, 0, time.FixedZone("JST", 9*60*60))
+	hypothesis := "仮説"
+	tests := []struct {
+		name     string
+		reader   handlerExperimentPreparationReader
+		wantCode apperr.Code
+		wantData bool
+	}{
+		{
+			name: "準備中experimentを画面DTOへ変換する",
+			reader: handlerExperimentPreparationReader{
+				found: true,
+				preparation: domain.ExperimentPreparation{
+					ExperimentID:          "experiment-1",
+					State:                 "preparing",
+					Purpose:               "目的",
+					Hypothesis:            &hypothesis,
+					EnvironmentConditions: "隔離環境",
+					InitialInput:          "初期入力",
+					Prompts: []domain.ExperimentPreparationPrompt{
+						{
+							SequenceNo: 1,
+							Content:    "prompt A",
+						},
+						{
+							SequenceNo: 2,
+							Content:    "prompt B",
+						},
+					},
+					EvaluationAxes: "正確性",
+					Source: domain.ExperimentPreparationSource{
+						State:     "採用",
+						VersionID: "version-1",
+					},
+					LastConfirmedAt: confirmedAt,
+				},
+			},
+			wantData: true,
+		},
+		{
+			name: "内部エラーを安全なコードへ変換する",
+			reader: handlerExperimentPreparationReader{
+				err: errors.New("SELECT private_session_id"),
+			},
+			wantCode: apperr.CodeExperimentPreparationUnavailable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := NewExperimentPreparationsHandler(usecase.NewGetExperimentPreparation(tt.reader), newTestLogger())
+
+			got := handler.GetExperimentPreparation("experiment-1")
+			if gotData := got.Data != nil; gotData != tt.wantData {
+				t.Fatalf("Data available = %v, want %v", gotData, tt.wantData)
+			}
+			if !tt.wantData {
+				if got.Error == nil {
+					t.Fatal("Error = nil, want safe error")
+				}
+				if got.Error.Code != string(tt.wantCode) {
+					t.Errorf("Error.Code = %q, want %q", got.Error.Code, tt.wantCode)
+				}
+				if strings.Contains(got.Error.Message, "private_session_id") {
+					t.Errorf("Error.Message = %q, want no private detail", got.Error.Message)
+				}
+
+				return
+			}
+			if got.Error != nil {
+				t.Fatalf("Error = %+v, want nil", got.Error)
+			}
+			if got.Data.Source.VersionID != "version-1" || got.Data.Source.State != "採用" {
+				t.Errorf("Source = %+v, want adopted version", got.Data.Source)
+			}
+			if got.Data.RequiredFields.Purpose != true || got.Data.RequiredFields.Prompts != true {
+				t.Errorf("RequiredFields = %+v, want completed fields", got.Data.RequiredFields)
+			}
+			if got.Data.LastConfirmedAt.Location() != time.UTC || !got.Data.LastConfirmedAt.Equal(confirmedAt.UTC()) {
+				t.Errorf("LastConfirmedAt = %s, want UTC %s", got.Data.LastConfirmedAt, confirmedAt.UTC())
+			}
+		})
+	}
+}
+
+// 実験準備query失敗の安全な変換。
+func TestFailGetExperimentPreparation(t *testing.T) {
+	got := failGetExperimentPreparation(errors.New("private database detail"))
+	if got.Error == nil {
+		t.Fatal("Error = nil, want safe error")
+	}
+	if got.Error.Code != string(apperr.CodeUnexpected) {
+		t.Errorf("Error.Code = %q, want %q", got.Error.Code, apperr.CodeUnexpected)
+	}
+}
+
+// handlerExperimentPreparationReader はhandler用実験準備queryのtest double。
+type handlerExperimentPreparationReader struct {
+	preparation domain.ExperimentPreparation
+	found       bool
+	err         error
+}
+
+// GetExperimentPreparation は指定済み実験準備を返却。
+func (r handlerExperimentPreparationReader) GetExperimentPreparation(context.Context, string) (domain.ExperimentPreparation, bool, error) {
+	return r.preparation, r.found, r.err
+}
+
 // handlerBriefingStore はhandler用開始記録portのtest double。
 type handlerBriefingStore struct {
 	beginErr  error
