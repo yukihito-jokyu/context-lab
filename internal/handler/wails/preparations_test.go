@@ -42,7 +42,7 @@ func TestPreparationsHandlerListPreparations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewPreparationsHandler(usecase.NewListPreparations(tt.reader), newTestLogger())
+			handler := NewPreparationsHandler(usecase.NewListPreparations(tt.reader), usecase.NewGetPreparation(tt.reader), newTestLogger())
 
 			got := handler.ListPreparations()
 			if tt.wantCode != "" {
@@ -86,7 +86,8 @@ func TestPreparationsHandlerListPreparations(t *testing.T) {
 
 // Wails環境準備一覧の空配列返却。
 func TestPreparationsHandlerListPreparationsReturnsEmptySlice(t *testing.T) {
-	handler := NewPreparationsHandler(usecase.NewListPreparations(handlerPreparationReader{preparations: []domain.Preparation{}}), newTestLogger())
+	reader := handlerPreparationReader{preparations: []domain.Preparation{}}
+	handler := NewPreparationsHandler(usecase.NewListPreparations(reader), usecase.NewGetPreparation(reader), newTestLogger())
 
 	got := handler.ListPreparations()
 	if got.Error != nil {
@@ -103,6 +104,101 @@ func TestPreparationsHandlerListPreparationsReturnsEmptySlice(t *testing.T) {
 	}
 }
 
+// Wails環境準備詳細の成功と安全な失敗返却。
+func TestPreparationsHandlerGetPreparation(t *testing.T) {
+	now := time.Date(2026, time.August, 10, 1, 2, 3, 0, time.UTC)
+	tests := []struct {
+		name     string
+		input    string
+		reader   handlerPreparationReader
+		wantCode apperr.Code
+	}{
+		{
+			name:  "詳細を返す",
+			input: "preparation-1",
+			reader: handlerPreparationReader{preparation: domain.PreparationDetail{
+				ID:             "preparation-1",
+				State:          "running",
+				StartedAt:      now,
+				LastObservedAt: now,
+				Candidates: []domain.PreparationCandidate{{
+					ID:                    "candidate-1",
+					EnvironmentConditions: "macOS",
+					Summary:               "利用可能",
+					CreatedAt:             now,
+				}},
+				Diagnostics: []domain.PreparationDiagnostic{{
+					ID:          "diagnostic-1",
+					Code:        "CHECKED",
+					SafeSummary: "確認済み",
+					OccurredAt:  now,
+				}},
+				Failure: &domain.PreparationFailure{
+					Code:       "FAILED",
+					OccurredAt: now,
+				},
+				Reconciliation: domain.PreparationReconciliation{
+					State:          "reconciling",
+					LastObservedAt: now,
+				},
+			},
+				found: true,
+			},
+		},
+		{
+			name:     "ID不正を返す",
+			input:    " ",
+			reader:   handlerPreparationReader{},
+			wantCode: apperr.CodePreparationRequestInvalid,
+		},
+		{
+			name:     "内部エラーを安全なコードへ変換する",
+			input:    "preparation-1",
+			reader:   handlerPreparationReader{err: errors.New("private credential")},
+			wantCode: apperr.CodePreparationUnavailable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := NewPreparationsHandler(usecase.NewListPreparations(&tt.reader), usecase.NewGetPreparation(&tt.reader), newTestLogger())
+
+			got := handler.GetPreparation(tt.input)
+			if tt.wantCode != "" {
+				if got.Error == nil {
+					t.Fatal("Error = nil, want safe error")
+				}
+				if got.Error.Code != string(tt.wantCode) {
+					t.Errorf("Error.Code = %q, want %q", got.Error.Code, tt.wantCode)
+				}
+
+				return
+			}
+			if got.Error != nil {
+				t.Fatalf("Error = %+v, want nil", got.Error)
+			}
+			if got.Data == nil {
+				t.Fatal("Data = nil, want preparation detail")
+			}
+			if got.Data.PreparationID != "preparation-1" {
+				t.Errorf("PreparationID = %q, want %q", got.Data.PreparationID, "preparation-1")
+			}
+			if got.Data.Candidates[0].EnvironmentConditions != "macOS" {
+				t.Errorf("Candidate.EnvironmentConditions = %q, want %q", got.Data.Candidates[0].EnvironmentConditions, "macOS")
+			}
+			if got.Data.Diagnostics[0].Summary != "確認済み" {
+				t.Errorf("Diagnostic.Summary = %q, want %q", got.Data.Diagnostics[0].Summary, "確認済み")
+			}
+			if got.Data.Failure == nil || got.Data.Failure.Code != "FAILED" {
+				t.Errorf("Failure = %+v, want FAILED", got.Data.Failure)
+			}
+			if got.Data.Reconciliation.State != "reconciling" {
+				t.Errorf("Reconciliation.State = %q, want %q", got.Data.Reconciliation.State, "reconciling")
+			}
+		})
+	}
+}
+
 // 環境準備一覧の予期しない失敗を安全なDTOへ変換。
 func TestFailListPreparations(t *testing.T) {
 	got := failListPreparations(errors.New("private sidecar credential"))
@@ -114,13 +210,31 @@ func TestFailListPreparations(t *testing.T) {
 	}
 }
 
+// 環境準備詳細の予期しない失敗を安全なDTOへ変換。
+func TestFailGetPreparation(t *testing.T) {
+	got := failGetPreparation(errors.New("private sidecar credential"))
+	if got.Error == nil {
+		t.Fatal("Error = nil, want safe error")
+	}
+	if got.Error.Code != string(apperr.CodeUnexpected) {
+		t.Errorf("Error.Code = %q, want %q", got.Error.Code, apperr.CodeUnexpected)
+	}
+}
+
 // handlerPreparationReader は環境準備一覧query用のtest double。
 type handlerPreparationReader struct {
 	preparations []domain.Preparation
+	preparation  domain.PreparationDetail
+	found        bool
 	err          error
 }
 
 // ListPreparations は指定済みの一覧またはエラーを返す。
 func (h handlerPreparationReader) ListPreparations(context.Context) ([]domain.Preparation, error) {
 	return h.preparations, h.err
+}
+
+// GetPreparation は指定済み詳細または失敗を返す。
+func (h handlerPreparationReader) GetPreparation(context.Context, string) (domain.PreparationDetail, bool, error) {
+	return h.preparation, h.found, h.err
 }

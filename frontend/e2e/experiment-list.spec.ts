@@ -56,6 +56,10 @@ type CreateInsightResponse = Record<string, unknown> & {
   result?: Record<string, unknown>;
 };
 type ListPreparationsResponse = Record<string, unknown>;
+type GetPreparationResponse = Record<string, unknown> & {
+  delayMs?: number;
+  result?: Record<string, unknown>;
+};
 
 declare global {
   interface Window {
@@ -598,6 +602,30 @@ async function installListPreparationsMock(
           callCount += 1;
           return Promise.resolve(response);
         }
+      };
+    `,
+  });
+}
+
+async function installGetPreparationMock(
+  page: Page,
+  responses: GetPreparationResponse[],
+) {
+  await page.addInitScript({
+    content: `
+      const responses = ${JSON.stringify(responses)};
+      let callCount = 0;
+      window.go = window.go || { wails: {} };
+      window.go.wails.PreparationsHandler = window.go.wails.PreparationsHandler || {};
+      window.go.wails.PreparationsHandler.GetPreparation = () => {
+        const response = responses[Math.min(callCount, responses.length - 1)];
+        callCount += 1;
+        if (response.delayMs) {
+          return new Promise((resolve) => {
+            window.setTimeout(() => resolve(response.result), response.delayMs);
+          });
+        }
+        return Promise.resolve(response);
       };
     `,
   });
@@ -3008,6 +3036,116 @@ test("環境準備sessionの空状態を表示する", async ({ page }) => {
 
   await expect(page.locator("#preparation-list-empty")).toBeVisible();
   await expect(page.getByRole("button", { name: "再読込" })).toBeVisible();
+});
+
+test("環境準備sessionを選択して詳細を表示する", async ({ page }) => {
+  await installListPreparationsMock(page, [
+    {
+      data: {
+        preparations: [
+          {
+            preparationId: "PREP-001",
+            state: "completed",
+            startedAt: confirmedAt,
+            lastObservedAt: confirmedAt,
+          },
+        ],
+      },
+    },
+  ]);
+  await installGetPreparationMock(page, [
+    {
+      data: {
+        preparationId: "PREP-001",
+        state: "completed",
+        startedAt: confirmedAt,
+        lastObservedAt: confirmedAt,
+        candidates: [
+          {
+            id: "CAND-001",
+            environmentConditions: "Node.js 20 / Linux",
+            summary: "隔離環境で実行可能です。",
+            createdAt: confirmedAt,
+          },
+        ],
+        diagnostics: [
+          {
+            id: "DIA-001",
+            code: "DEPENDENCY_NOTICE",
+            summary: "依存関係を確認しました。",
+            occurredAt: confirmedAt,
+          },
+        ],
+        reconciliation: { state: "confirmed", lastObservedAt: confirmedAt },
+      },
+    },
+  ]);
+  await page.goto("/preparations");
+
+  await page.getByRole("link", { name: "詳細を確認" }).click();
+  await expect(page).toHaveURL("/preparations/PREP-001");
+  await expect(
+    page.getByRole("heading", { name: "環境準備の詳細" }),
+  ).toBeVisible();
+  await expect(page.getByText("隔離環境で実行可能です。")).toBeVisible();
+  await expect(page.getByText("DEPENDENCY_NOTICE")).toBeVisible();
+});
+
+test("環境準備session詳細のloading、候補なし、照合中、失敗を表示する", async ({
+  page,
+}) => {
+  await installGetPreparationMock(page, [
+    {
+      delayMs: 200,
+      result: {
+        data: {
+          preparationId: "PREP-002",
+          state: "failed",
+          startedAt: confirmedAt,
+          lastObservedAt: confirmedAt,
+          candidates: [],
+          diagnostics: [],
+          failure: { code: "PREPARATION_TIMEOUT", occurredAt: confirmedAt },
+          reconciliation: { state: "reconciling", lastObservedAt: confirmedAt },
+        },
+      },
+    },
+  ]);
+  await page.goto("/preparations/PREP-002");
+
+  await expect(page.locator("#preparation-detail-loading")).toBeVisible();
+  await expect(page.locator("#preparation-candidates-empty")).toBeVisible();
+  await expect(page.locator("#preparation-reconciling")).toBeVisible();
+  await expect(page.locator("#preparation-failure")).toContainText(
+    "PREPARATION_TIMEOUT",
+  );
+});
+
+test("環境準備session詳細の再読込失敗から回復する", async ({ page }) => {
+  await installGetPreparationMock(page, [
+    {
+      error: {
+        code: "PREPARATION_UNAVAILABLE",
+        message: "一時的に取得できません。",
+      },
+    },
+    {
+      data: {
+        preparationId: "PREP-003",
+        state: "completed",
+        startedAt: confirmedAt,
+        lastObservedAt: confirmedAt,
+        candidates: [],
+        diagnostics: [],
+        reconciliation: { state: "confirmed", lastObservedAt: confirmedAt },
+      },
+    },
+  ]);
+  await page.goto("/preparations/PREP-003");
+
+  await expect(page.locator("#preparation-detail-error")).toBeVisible();
+  await page.getByRole("button", { name: "再読込" }).click();
+  await expect(page.getByText("PREP-003", { exact: true })).toBeVisible();
 });
 
 test("知見を根拠2件で記録し、失敗後に同じrequest IDで再試行する", async ({
