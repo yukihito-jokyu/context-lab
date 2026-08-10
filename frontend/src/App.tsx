@@ -1,12 +1,14 @@
 import { EnvironmentPreparationListPage } from "@/features/environment-preparation/EnvironmentPreparationListPage";
 import { listPreparations } from "@/features/environment-preparation/services/list-preparations-service";
 import { ComparisonPage } from "@/features/experiments/ComparisonPage";
+import { CreateDerivedExperimentPage } from "@/features/experiments/CreateDerivedExperimentPage";
 import { DerivationSourcePage } from "@/features/experiments/DerivationSourcePage";
 import { EvaluationDetailPage } from "@/features/experiments/EvaluationDetailPage";
 import { ExperimentListPage } from "@/features/experiments/ExperimentListPage";
 import { ExperimentPreparationPage } from "@/features/experiments/ExperimentPreparationPage";
 import { ExperimentWorkspacePage } from "@/features/experiments/ExperimentWorkspacePage";
 import { RunEvaluationPage } from "@/features/experiments/RunEvaluationPage";
+import { createDerivedExperiment } from "@/features/experiments/services/create-derived-experiment-service";
 import { createExperimentFromBrief } from "@/features/experiments/services/create-experiment-from-brief-service";
 import { finalizeExperimentConclusion } from "@/features/experiments/services/finalize-experiment-conclusion-service";
 import { fixExperimentConditions } from "@/features/experiments/services/fix-experiment-conditions-service";
@@ -56,6 +58,9 @@ export default function App() {
   const derivationSourceMatch = window.location.pathname.match(
     /^\/experiments\/([^/]+)\/derivations$/,
   );
+  const createDerivedExperimentMatch = window.location.pathname.match(
+    /^\/experiments\/([^/]+)\/derivations\/create$/,
+  );
   const evaluationMatch = window.location.pathname.match(
     /^\/evaluations\/([^/]+)$/,
   );
@@ -100,6 +105,15 @@ export default function App() {
       <DerivationSourcePage
         experimentId={decodeExperimentID(derivationSourceMatch[1])}
         getDerivationSource={getDerivationSource}
+      />
+    );
+  }
+
+  if (createDerivedExperimentMatch) {
+    return (
+      <CreateDerivedExperimentPage
+        createDerivedExperiment={createDerivedExperiment}
+        sourceExperimentId={decodeExperimentID(createDerivedExperimentMatch[1])}
       />
     );
   }

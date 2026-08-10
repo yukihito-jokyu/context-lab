@@ -50,16 +50,26 @@ function DerivationSourceContent({ source }: { source: DerivationSource }) {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-wrap gap-2">
-            <Button disabled type="button">
-              <Sparkles /> 派生実験を作成
-            </Button>
+            {eligibility.canCreateDerivedExperiment ? (
+              <Button asChild type="button">
+                <a
+                  href={`/experiments/${encodeURIComponent(source.source.experimentId)}/derivations/create`}
+                >
+                  <Sparkles /> 派生実験を作成
+                </a>
+              </Button>
+            ) : (
+              <Button disabled type="button">
+                <Sparkles /> 派生実験を作成
+              </Button>
+            )}
             <Button disabled type="button" variant="outline">
               <FlaskConical /> 壁打ちを開始
             </Button>
           </div>
           {eligibility.canCreateDerivedExperiment && (
             <p className="text-sm text-muted-foreground">
-              派生作成と壁打ちは、次の機能で利用可能になります。
+              壁打ちは、次の機能で利用可能になります。
             </p>
           )}
         </CardContent>
