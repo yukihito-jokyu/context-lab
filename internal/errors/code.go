@@ -44,6 +44,9 @@ const (
 	CodeRunEvaluationAlreadyExists        Code = "RUN_EVALUATION_ALREADY_EXISTS"
 	CodeRunEvaluationPending              Code = "RUN_EVALUATION_PENDING"
 	CodeRunEvaluationFailed               Code = "RUN_EVALUATION_UNAVAILABLE"
+	CodeRunDetailRequestInvalid           Code = "RUN_DETAIL_REQUEST_INVALID"
+	CodeRunDetailNotFound                 Code = "RUN_DETAIL_NOT_FOUND"
+	CodeRunDetailUnavailable              Code = "RUN_DETAIL_UNAVAILABLE"
 	CodeOperationTimeout                  Code = "OPERATION_TIMEOUT"
 	CodeOperationCanceled                 Code = "OPERATION_CANCELED"
 	CodeUnexpected                        Code = "UNEXPECTED"
@@ -90,6 +93,9 @@ var defaultMessages = map[Code]message{
 	CodeRunEvaluationAlreadyExists:        "このrunはすでに評価済みです",
 	CodeRunEvaluationPending:              "run評価の開始を確認中です",
 	CodeRunEvaluationFailed:               "run評価を開始できませんでした",
+	CodeRunDetailRequestInvalid:           "run詳細の取得要求が不正です",
+	CodeRunDetailNotFound:                 "runが見つかりません",
+	CodeRunDetailUnavailable:              "run詳細を取得できませんでした",
 	CodeOperationTimeout:                  "実験一覧の取得がタイムアウトしました",
 	CodeOperationCanceled:                 "実験一覧の取得を中止しました",
 	CodeUnexpected:                        "予期しないエラーが発生しました",
