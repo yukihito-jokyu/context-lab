@@ -245,6 +245,9 @@ export function CreateDerivedExperimentPage({
             <CardTitle>派生する理由</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            <label className="sr-only" htmlFor="derived-reason">
+              派生する理由
+            </label>
             <textarea
               className="min-h-28 w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-soft focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               disabled={isSubmitting}
