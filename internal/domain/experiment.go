@@ -296,6 +296,40 @@ type ExperimentComparisonEvaluation struct {
 	UpdatedAt      time.Time
 }
 
+// InsightWorkspace は知見作成画面の安全な読取正本。
+type InsightWorkspace struct {
+	EvidenceCandidates  []InsightEvidenceCandidate
+	SavedConsiderations []InsightSavedConsideration
+	Insights            []InsightSummary
+	LastConfirmedAt     *time.Time
+}
+
+// InsightEvidenceCandidate は確定済み結論を持つ知見根拠候補。
+type InsightEvidenceCandidate struct {
+	ExperimentID   string
+	Purpose        string
+	EvaluationAxes string
+	ConclusionID   string
+	Conclusion     string
+	FinalizedAt    time.Time
+}
+
+// InsightSavedConsideration は利用者が確定した比較結論。
+type InsightSavedConsideration struct {
+	ExperimentID string
+	ConclusionID string
+	Content      string
+	FinalizedAt  time.Time
+}
+
+// InsightSummary は保存済み知見の安全な要約。
+type InsightSummary struct {
+	ID            string
+	Statement     string
+	EvidenceCount int
+	CreatedAt     time.Time
+}
+
 // ExperimentRunDetail はrun詳細画面が再表示する安全な観測結果。
 type ExperimentRunDetail struct {
 	Run             ExperimentRunFact
