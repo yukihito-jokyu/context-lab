@@ -606,7 +606,7 @@ func (c conclusionQueryConnection) Begin() (driver.Tx, error) {
 	if c.stage == conclusionFinalizeBusy || c.stage == conclusionOuterBusyExisting || c.stage == conclusionOuterBusyConflict || c.stage == conclusionOuterBusyFindError || c.stage == conclusionOuterBusyCancellation {
 		return nil, errors.New("database is locked")
 	}
-	return conclusionQueryTransaction{stage: c.stage}, nil
+	return conclusionQueryTransaction(c), nil
 }
 
 func (c conclusionQueryConnection) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
