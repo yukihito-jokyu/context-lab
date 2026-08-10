@@ -271,7 +271,11 @@ func readExperimentPreparationDraftState(t *testing.T, store *Store, experimentI
 	if err != nil {
 		t.Fatalf("query experiment preparation prompts error = %v", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			t.Errorf("close experiment preparation prompts rows error = %v", err)
+		}
+	}()
 	for rows.Next() {
 		var content string
 		if err := rows.Scan(&content); err != nil {
