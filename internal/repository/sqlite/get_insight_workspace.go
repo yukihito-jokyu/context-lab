@@ -15,6 +15,11 @@ const insightWorkspaceCandidatesQuery = `SELECT e.id, e.purpose, c.evaluation_ax
 	WHERE x.state = 'finalized'
 	ORDER BY x.finalized_at, x.id`
 
+const insightWorkspaceInsightsQuery = `SELECT i.id, i.statement, i.applicability_conditions, i.verification_gaps, COUNT(e.insight_id), i.created_at
+	FROM insights i LEFT JOIN insight_evidences e ON e.insight_id = i.id
+	GROUP BY i.id, i.statement, i.applicability_conditions, i.verification_gaps, i.created_at
+	ORDER BY i.created_at, i.id`
+
 // GetInsightWorkspace は知見作成画面の確定済み比較結論を読み出す。
 func (s *Store) GetInsightWorkspace(ctx context.Context) (domain.InsightWorkspace, error) {
 	rows, err := s.db.QueryContext(ctx, insightWorkspaceCandidatesQuery)
@@ -53,6 +58,31 @@ func (s *Store) GetInsightWorkspace(ctx context.Context) (domain.InsightWorkspac
 	}
 	if err := rows.Err(); err != nil {
 		return domain.InsightWorkspace{}, fmt.Errorf("iterate insight workspace candidates: %w", err)
+	}
+	insightRows, err := s.db.QueryContext(ctx, insightWorkspaceInsightsQuery)
+	if err != nil {
+		return domain.InsightWorkspace{}, fmt.Errorf("find insights: %w", err)
+	}
+	defer func() { _ = insightRows.Close() }()
+	for insightRows.Next() {
+		var insight domain.InsightSummary
+		var createdAt string
+		if err := insightRows.Scan(&insight.ID, &insight.Statement, &insight.ApplicabilityConditions, &insight.VerificationGaps, &insight.EvidenceCount, &createdAt); err != nil {
+			return domain.InsightWorkspace{}, fmt.Errorf("scan insight: %w", err)
+		}
+		parsedCreatedAt, parseErr := time.Parse(time.RFC3339Nano, createdAt)
+		if parseErr != nil {
+			return domain.InsightWorkspace{}, fmt.Errorf("parse insight time: %w", parseErr)
+		}
+		insight.CreatedAt = parsedCreatedAt
+		workspace.Insights = append(workspace.Insights, insight)
+		if workspace.LastConfirmedAt == nil || insight.CreatedAt.After(*workspace.LastConfirmedAt) {
+			lastConfirmedAt := insight.CreatedAt
+			workspace.LastConfirmedAt = &lastConfirmedAt
+		}
+	}
+	if err := insightRows.Err(); err != nil {
+		return domain.InsightWorkspace{}, fmt.Errorf("iterate insights: %w", err)
 	}
 
 	return workspace, nil

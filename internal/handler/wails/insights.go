@@ -45,21 +45,104 @@ type InsightSavedConsiderationData struct {
 
 // InsightSummaryData は画面表示用の保存済み知見要約。
 type InsightSummaryData struct {
-	ID            string    `json:"id"`
-	Statement     string    `json:"statement"`
-	EvidenceCount int       `json:"evidenceCount"`
-	CreatedAt     time.Time `json:"createdAt"`
+	ID                      string    `json:"id"`
+	Statement               string    `json:"statement"`
+	ApplicabilityConditions string    `json:"applicabilityConditions"`
+	VerificationGaps        string    `json:"verificationGaps"`
+	EvidenceCount           int       `json:"evidenceCount"`
+	CreatedAt               time.Time `json:"createdAt"`
 }
 
 // InsightsHandler は知見ワークスペースqueryのWails binding。
 type InsightsHandler struct {
 	query  *usecase.GetInsightWorkspace
+	create *usecase.CreateInsight
 	logger logger.Logger
+}
+
+// CreateInsightEvidenceRequest は知見作成根拠の画面DTO。
+type CreateInsightEvidenceRequest struct {
+	ExperimentID string `json:"experimentId"`
+	ConclusionID string `json:"conclusionId"`
+}
+
+// CreateInsightRequest は知見作成の画面DTO。
+type CreateInsightRequest struct {
+	RequestID               string                         `json:"requestId"`
+	Evidences               []CreateInsightEvidenceRequest `json:"evidences"`
+	Statement               string                         `json:"statement"`
+	ApplicabilityConditions string                         `json:"applicabilityConditions"`
+	VerificationGaps        string                         `json:"verificationGaps"`
+}
+
+// CreateInsightEvidenceData は保存済み根拠の画面DTO。
+type CreateInsightEvidenceData struct {
+	ExperimentID string `json:"experimentId"`
+	ConclusionID string `json:"conclusionId"`
+}
+
+// CreateInsightResponse は知見作成の成功または失敗結果。
+type CreateInsightResponse struct {
+	Data  *CreateInsightData `json:"data,omitempty"`
+	Error *ErrorResponse     `json:"error,omitempty"`
+}
+
+// CreateInsightData は保存済み知見の画面DTO。
+type CreateInsightData struct {
+	RequestID               string                      `json:"requestId"`
+	InsightID               string                      `json:"insightId"`
+	Evidences               []CreateInsightEvidenceData `json:"evidences"`
+	Statement               string                      `json:"statement"`
+	ApplicabilityConditions string                      `json:"applicabilityConditions"`
+	VerificationGaps        string                      `json:"verificationGaps"`
+	CreatedAt               time.Time                   `json:"createdAt"`
+}
+
+// CreateInsight は画面DTOを安全に知見作成usecaseへ渡す。
+func (h *InsightsHandler) CreateInsight(request CreateInsightRequest) CreateInsightResponse {
+	ctx := context.Background()
+	h.logger.Info(ctx, "create insight called")
+	if h.create == nil {
+		return h.failCreate(ctx, apperr.New(apperr.CodeInsightCreateUnavailable))
+	}
+	evidences := make([]domain.InsightEvidence, len(request.Evidences))
+	for index, evidence := range request.Evidences {
+		evidences[index] = domain.InsightEvidence{ExperimentID: evidence.ExperimentID, ConclusionID: evidence.ConclusionID}
+	}
+	x, err := h.create.Execute(ctx, request.RequestID, evidences, request.Statement, request.ApplicabilityConditions, request.VerificationGaps)
+	if err != nil {
+		return h.failCreate(ctx, err)
+	}
+	return CreateInsightResponse{Data: &CreateInsightData{RequestID: x.RequestID, InsightID: x.InsightID, Evidences: toCreateInsightEvidenceData(x.Evidences), Statement: x.Statement, ApplicabilityConditions: x.ApplicabilityConditions, VerificationGaps: x.VerificationGaps, CreatedAt: x.CreatedAt.UTC()}}
+}
+
+// toCreateInsightEvidenceData はdomain根拠を画面DTOへ変換する。
+func toCreateInsightEvidenceData(evidences []domain.InsightEvidence) []CreateInsightEvidenceData {
+	data := make([]CreateInsightEvidenceData, 0, len(evidences))
+	for _, evidence := range evidences {
+		data = append(data, CreateInsightEvidenceData{ExperimentID: evidence.ExperimentID, ConclusionID: evidence.ConclusionID})
+	}
+	return data
+}
+
+// failCreate は知見作成エラーを安全な画面DTOへ変換する。
+func (h *InsightsHandler) failCreate(ctx context.Context, err error) CreateInsightResponse {
+	e := apperr.As(err)
+	if e == nil {
+		e = apperr.NewUnexpected(err)
+	}
+	h.logger.ErrorCode(ctx, "create insight failed", string(e.Code), slog.String("operation", "create_insight"))
+	return CreateInsightResponse{Error: &ErrorResponse{Code: string(e.Code), Message: e.Error()}}
 }
 
 // NewInsightsHandler は知見ワークスペースbindingを生成する。
 func NewInsightsHandler(query *usecase.GetInsightWorkspace, appLogger logger.Logger) *InsightsHandler {
 	return &InsightsHandler{query: query, logger: appLogger}
+}
+
+// NewInsightsHandlerWithCreate は知見queryと作成bindingを生成する。
+func NewInsightsHandlerWithCreate(query *usecase.GetInsightWorkspace, create *usecase.CreateInsight, appLogger logger.Logger) *InsightsHandler {
+	return &InsightsHandler{query: query, create: create, logger: appLogger}
 }
 
 // GetInsightWorkspace は知見作成画面の安全な正本を画面DTOで返す。
@@ -103,7 +186,7 @@ func toGetInsightWorkspaceData(workspace domain.InsightWorkspace) *GetInsightWor
 		data.SavedConsiderations = append(data.SavedConsiderations, InsightSavedConsiderationData{ExperimentID: consideration.ExperimentID, ConclusionID: consideration.ConclusionID, Content: consideration.Content, FinalizedAt: consideration.FinalizedAt.UTC()})
 	}
 	for _, insight := range workspace.Insights {
-		data.Insights = append(data.Insights, InsightSummaryData{ID: insight.ID, Statement: insight.Statement, EvidenceCount: insight.EvidenceCount, CreatedAt: insight.CreatedAt.UTC()})
+		data.Insights = append(data.Insights, InsightSummaryData{ID: insight.ID, Statement: insight.Statement, ApplicabilityConditions: insight.ApplicabilityConditions, VerificationGaps: insight.VerificationGaps, EvidenceCount: insight.EvidenceCount, CreatedAt: insight.CreatedAt.UTC()})
 	}
 	if workspace.LastConfirmedAt != nil {
 		lastConfirmedAt := workspace.LastConfirmedAt.UTC()

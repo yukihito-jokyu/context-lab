@@ -6,8 +6,11 @@ import (
 	"database/sql/driver"
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"testing"
+
+	"github.com/yukihito-jokyu/context-lab/internal/domain"
 )
 
 // GetInsightWorkspaceの確定済み候補と空状態を検証する。
@@ -37,6 +40,44 @@ func TestStoreGetInsightWorkspace(t *testing.T) {
 	}
 	if len(empty.EvidenceCandidates) != 0 || len(empty.SavedConsiderations) != 0 || len(empty.Insights) != 0 || empty.LastConfirmedAt != nil {
 		t.Errorf("empty workspace = %+v, want empty arrays and nil time", empty)
+	}
+}
+
+// GetInsightWorkspaceが保存済み知見と最大確認時刻を返すことを検証する。
+func TestStoreGetInsightWorkspaceWithInsight(t *testing.T) {
+	store := newTestStore(t)
+	seedInsightEvidence(t, store, "experiment-a", "conclusion-a")
+	seedInsightEvidence(t, store, "experiment-b", "conclusion-b")
+	created, wasCreated, err := store.CreateInsight(context.Background(), "request", []domain.InsightEvidence{
+		{
+			ExperimentID: "experiment-a",
+			ConclusionID: "conclusion-a",
+		},
+		{
+			ExperimentID: "experiment-b",
+			ConclusionID: "conclusion-b",
+		},
+	}, "statement", "conditions", "gaps")
+	if err != nil || !wasCreated {
+		t.Fatalf("CreateInsight() = (%+v, %v, %v), want created", created, wasCreated, err)
+	}
+
+	workspace, err := store.GetInsightWorkspace(context.Background())
+	if err != nil {
+		t.Fatalf("GetInsightWorkspace() error = %v", err)
+	}
+	if len(workspace.Insights) != 1 {
+		t.Fatalf("Insights = %+v, want one", workspace.Insights)
+	}
+	insight := workspace.Insights[0]
+	if insight.ID != created.InsightID {
+		t.Errorf("Insight.ID = %q, want %q", insight.ID, created.InsightID)
+	}
+	if insight.Statement != "statement" || insight.ApplicabilityConditions != "conditions" || insight.VerificationGaps != "gaps" || insight.EvidenceCount != 2 {
+		t.Errorf("Insight = %+v, want persisted fields and evidence count", insight)
+	}
+	if workspace.LastConfirmedAt == nil || !workspace.LastConfirmedAt.Equal(created.CreatedAt) {
+		t.Errorf("LastConfirmedAt = %v, want %v", workspace.LastConfirmedAt, created.CreatedAt)
 	}
 }
 
@@ -71,6 +112,26 @@ func TestStoreGetInsightWorkspaceDriverFailures(t *testing.T) {
 			name:  "成功",
 			stage: insightWorkspaceSuccess,
 		},
+		{
+			name:      "知見query失敗",
+			stage:     insightWorkspaceInsightQueryFailure,
+			wantError: true,
+		},
+		{
+			name:      "知見scan失敗",
+			stage:     insightWorkspaceInsightScanFailure,
+			wantError: true,
+		},
+		{
+			name:      "知見時刻不正",
+			stage:     insightWorkspaceInsightTimeFailure,
+			wantError: true,
+		},
+		{
+			name:      "知見rows失敗",
+			stage:     insightWorkspaceInsightRowsFailure,
+			wantError: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -89,11 +150,15 @@ func TestStoreGetInsightWorkspaceDriverFailures(t *testing.T) {
 type insightWorkspaceFailureStage string
 
 const (
-	insightWorkspaceQueryFailure insightWorkspaceFailureStage = "query"
-	insightWorkspaceScanFailure  insightWorkspaceFailureStage = "scan"
-	insightWorkspaceTimeFailure  insightWorkspaceFailureStage = "time"
-	insightWorkspaceRowsFailure  insightWorkspaceFailureStage = "rows"
-	insightWorkspaceSuccess      insightWorkspaceFailureStage = "success"
+	insightWorkspaceQueryFailure        insightWorkspaceFailureStage = "query"
+	insightWorkspaceScanFailure         insightWorkspaceFailureStage = "scan"
+	insightWorkspaceTimeFailure         insightWorkspaceFailureStage = "time"
+	insightWorkspaceRowsFailure         insightWorkspaceFailureStage = "rows"
+	insightWorkspaceSuccess             insightWorkspaceFailureStage = "success"
+	insightWorkspaceInsightQueryFailure insightWorkspaceFailureStage = "insight-query"
+	insightWorkspaceInsightScanFailure  insightWorkspaceFailureStage = "insight-scan"
+	insightWorkspaceInsightTimeFailure  insightWorkspaceFailureStage = "insight-time"
+	insightWorkspaceInsightRowsFailure  insightWorkspaceFailureStage = "insight-rows"
 )
 
 const insightWorkspaceFailureDriverName = "context-lab-insight-workspace-failure"
@@ -138,9 +203,48 @@ func (insightWorkspaceFailureConnection) Begin() (driver.Tx, error) {
 }
 
 // QueryContext は段階別の候補行を返す。
-func (c insightWorkspaceFailureConnection) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+func (c insightWorkspaceFailureConnection) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
 	if c.stage == insightWorkspaceQueryFailure {
 		return nil, errors.New("query failed")
+	}
+	if strings.Contains(query, "FROM insights i") {
+		if c.stage == insightWorkspaceInsightQueryFailure {
+			return nil, errors.New("insight query")
+		}
+		if c.stage == insightWorkspaceInsightRowsFailure {
+			return &insightWorkspaceFailureRows{
+				columns: []string{"id"},
+				nextErr: errors.New("insight rows"),
+			}, nil
+		}
+		createdAt := "2026-08-11T00:00:00Z"
+		if c.stage == insightWorkspaceInsightTimeFailure {
+			createdAt = "invalid"
+		}
+		identifier := driver.Value("insight-1")
+		if c.stage == insightWorkspaceInsightScanFailure {
+			identifier = nil
+		}
+		return &insightWorkspaceFailureRows{
+			columns: []string{
+				"id",
+				"statement",
+				"applicability_conditions",
+				"verification_gaps",
+				"evidence_count",
+				"created_at",
+			},
+			values: [][]driver.Value{
+				{
+					identifier,
+					"知見",
+					"適用条件",
+					"検証不足",
+					int64(2),
+					createdAt,
+				},
+			},
+		}, nil
 	}
 	rows := &insightWorkspaceFailureRows{columns: []string{
 		"experiment_id",
