@@ -130,6 +130,54 @@ export namespace wails {
 		    return a;
 		}
 	}
+	export class ExperimentPreparationPromptResponse {
+	    sequenceNo: number;
+	    content: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ExperimentPreparationPromptResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sequenceNo = source["sequenceNo"];
+	        this.content = source["content"];
+	    }
+	}
+	export class ExperimentPreparationRequiredFieldsResponse {
+	    purpose: boolean;
+	    environmentConditions: boolean;
+	    initialInput: boolean;
+	    prompts: boolean;
+	    evaluationAxes: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ExperimentPreparationRequiredFieldsResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.purpose = source["purpose"];
+	        this.environmentConditions = source["environmentConditions"];
+	        this.initialInput = source["initialInput"];
+	        this.prompts = source["prompts"];
+	        this.evaluationAxes = source["evaluationAxes"];
+	    }
+	}
+	export class ExperimentPreparationSourceResponse {
+	    state: string;
+	    versionId: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ExperimentPreparationSourceResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.state = source["state"];
+	        this.versionId = source["versionId"];
+	    }
+	}
 	export class ExperimentResponse {
 	    id: string;
 	    purpose: string;
@@ -219,6 +267,89 @@ export namespace wails {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.data = this.convertValues(source["data"], GetExperimentBriefingData);
+	        this.error = this.convertValues(source["error"], ErrorResponse);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class GetExperimentPreparationData {
+	    experimentId: string;
+	    state: string;
+	    purpose: string;
+	    hypothesis?: string;
+	    environmentConditions: string;
+	    initialInput: string;
+	    prompts: ExperimentPreparationPromptResponse[];
+	    evaluationAxes: string;
+	    source: ExperimentPreparationSourceResponse;
+	    requiredFields: ExperimentPreparationRequiredFieldsResponse;
+	    // Go type: time
+	    lastConfirmedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new GetExperimentPreparationData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.experimentId = source["experimentId"];
+	        this.state = source["state"];
+	        this.purpose = source["purpose"];
+	        this.hypothesis = source["hypothesis"];
+	        this.environmentConditions = source["environmentConditions"];
+	        this.initialInput = source["initialInput"];
+	        this.prompts = this.convertValues(source["prompts"], ExperimentPreparationPromptResponse);
+	        this.evaluationAxes = source["evaluationAxes"];
+	        this.source = this.convertValues(source["source"], ExperimentPreparationSourceResponse);
+	        this.requiredFields = this.convertValues(source["requiredFields"], ExperimentPreparationRequiredFieldsResponse);
+	        this.lastConfirmedAt = this.convertValues(source["lastConfirmedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class GetExperimentPreparationResponse {
+	    data?: GetExperimentPreparationData;
+	    error?: ErrorResponse;
+	
+	    static createFrom(source: any = {}) {
+	        return new GetExperimentPreparationResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.data = this.convertValues(source["data"], GetExperimentPreparationData);
 	        this.error = this.convertValues(source["error"], ErrorResponse);
 	    }
 	
