@@ -1,12 +1,13 @@
 import { EnvironmentPreparationListPage } from "@/features/environment-preparation/EnvironmentPreparationListPage";
 import { listPreparations } from "@/features/environment-preparation/services/list-preparations-service";
-import { EvaluationOperationPage } from "@/features/experiments/EvaluationOperationPage";
+import { EvaluationDetailPage } from "@/features/experiments/EvaluationDetailPage";
 import { ExperimentListPage } from "@/features/experiments/ExperimentListPage";
 import { ExperimentPreparationPage } from "@/features/experiments/ExperimentPreparationPage";
 import { ExperimentWorkspacePage } from "@/features/experiments/ExperimentWorkspacePage";
 import { RunEvaluationPage } from "@/features/experiments/RunEvaluationPage";
 import { createExperimentFromBrief } from "@/features/experiments/services/create-experiment-from-brief-service";
 import { fixExperimentConditions } from "@/features/experiments/services/fix-experiment-conditions-service";
+import { getEvaluationDetail } from "@/features/experiments/services/get-evaluation-detail-service";
 import { getExperimentBriefing } from "@/features/experiments/services/get-experiment-briefing-service";
 import { getExperimentPreparation } from "@/features/experiments/services/get-experiment-preparation-service";
 import { getExperimentWorkspace } from "@/features/experiments/services/get-experiment-workspace-service";
@@ -52,8 +53,9 @@ export default function App() {
 
   if (evaluationMatch) {
     return (
-      <EvaluationOperationPage
+      <EvaluationDetailPage
         evaluationId={decodeExperimentID(evaluationMatch[1])}
+        getEvaluationDetail={getEvaluationDetail}
         operationId={
           new URLSearchParams(window.location.search).get("operationId") ??
           undefined
