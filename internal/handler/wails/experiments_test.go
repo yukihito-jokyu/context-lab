@@ -544,6 +544,103 @@ func TestExperimentPreparationsHandlerGetExperimentPreparation(t *testing.T) {
 	}
 }
 
+// Wails下書き保存の成功と安全な失敗返却。
+func TestExperimentPreparationsHandlerSaveExperimentPreparationDraft(t *testing.T) {
+	tests := []struct {
+		name      string
+		request   SaveExperimentPreparationDraftRequest
+		storeErr  error
+		wantCode  apperr.Code
+		wantCount int
+	}{
+		{
+			name: "保存済みフォーム値を返す",
+			request: SaveExperimentPreparationDraftRequest{
+				RequestID:    "request-1",
+				ExperimentID: "experiment-1",
+				Prompts: []string{
+					"first",
+					"second",
+				},
+			},
+			wantCount: 2,
+		},
+		{
+			name: "不正な保存要求を安全に返す",
+			request: SaveExperimentPreparationDraftRequest{
+				RequestID:    "request-2",
+				ExperimentID: "experiment-1",
+			},
+			storeErr: apperr.Wrap(apperr.CodeDraftRequestInvalid, errors.New("private database credential")),
+			wantCode: apperr.CodeDraftRequestInvalid,
+		},
+		{
+			name: "存在しない実験を安全に返す",
+			request: SaveExperimentPreparationDraftRequest{
+				RequestID:    "request-3",
+				ExperimentID: "experiment-1",
+			},
+			storeErr: apperr.Wrap(apperr.CodeExperimentPreparationNotFound, errors.New("private database credential")),
+			wantCode: apperr.CodeExperimentPreparationNotFound,
+		},
+		{
+			name: "編集不可状態を安全に返す",
+			request: SaveExperimentPreparationDraftRequest{
+				RequestID:    "request-4",
+				ExperimentID: "experiment-1",
+			},
+			storeErr: apperr.Wrap(apperr.CodeExperimentPreparationNotEditable, errors.New("private database credential")),
+			wantCode: apperr.CodeExperimentPreparationNotEditable,
+		},
+		{
+			name: "内部失敗を安全なコードへ変換する",
+			request: SaveExperimentPreparationDraftRequest{
+				RequestID:    "request-5",
+				ExperimentID: "experiment-1",
+			},
+			storeErr: errors.New("private database credential"),
+			wantCode: apperr.CodeDraftSaveFailed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &handlerExperimentPreparationDraftStore{err: tt.storeErr}
+			handler := NewExperimentPreparationsHandler(usecase.NewGetExperimentPreparation(handlerExperimentPreparationReader{}), newTestLogger(), usecase.NewSaveExperimentPreparationDraft(store))
+
+			got := handler.SaveExperimentPreparationDraft(tt.request)
+			if tt.wantCode != "" {
+				if got.Error == nil {
+					t.Fatal("Error = nil, want safe error")
+				}
+				if got.Error.Code != string(tt.wantCode) {
+					t.Errorf("Error.Code = %q, want %q", got.Error.Code, tt.wantCode)
+				}
+				if strings.Contains(got.Error.Message, "private database credential") {
+					t.Errorf("Error.Message = %q, want no internal credential", got.Error.Message)
+				}
+
+				return
+			}
+			if got.Error != nil {
+				t.Fatalf("Error = %+v, want nil", got.Error)
+			}
+			if got.Data == nil {
+				t.Fatal("Data = nil, want saved draft")
+			}
+			if got.Data.State != "preparing" {
+				t.Errorf("State = %q, want preparing", got.Data.State)
+			}
+			if gotCount := len(got.Data.Prompts); gotCount != tt.wantCount {
+				t.Errorf("Prompts length = %d, want %d", gotCount, tt.wantCount)
+			}
+			if gotCount := len(store.draft.Prompts); gotCount != tt.wantCount {
+				t.Errorf("stored prompts length = %d, want %d", gotCount, tt.wantCount)
+			}
+		})
+	}
+}
+
 // 実験準備query失敗の安全な変換。
 func TestFailGetExperimentPreparation(t *testing.T) {
 	got := failGetExperimentPreparation(errors.New("private database detail"))
@@ -565,6 +662,22 @@ type handlerExperimentPreparationReader struct {
 // GetExperimentPreparation は指定済み実験準備を返却。
 func (r handlerExperimentPreparationReader) GetExperimentPreparation(context.Context, string) (domain.ExperimentPreparation, bool, error) {
 	return r.preparation, r.found, r.err
+}
+
+// handlerExperimentPreparationDraftStore はhandler用下書き保存portのtest double。
+type handlerExperimentPreparationDraftStore struct {
+	draft domain.ExperimentPreparationDraft
+	err   error
+}
+
+// SaveExperimentPreparationDraft は指定済み下書きまたは失敗を返却。
+func (s *handlerExperimentPreparationDraftStore) SaveExperimentPreparationDraft(_ context.Context, draft domain.ExperimentPreparationDraft) (domain.ExperimentPreparationDraft, error) {
+	if s.err != nil {
+		return domain.ExperimentPreparationDraft{}, s.err
+	}
+	s.draft = draft
+
+	return draft, nil
 }
 
 // handlerBriefingStore はhandler用開始記録portのtest double。

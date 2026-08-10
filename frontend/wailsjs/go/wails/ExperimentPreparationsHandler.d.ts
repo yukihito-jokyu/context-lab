@@ -3,3 +3,5 @@
 import {wails} from '../models';
 
 export function GetExperimentPreparation(arg1:string):Promise<wails.GetExperimentPreparationResponse>;
+
+export function SaveExperimentPreparationDraft(arg1:wails.SaveExperimentPreparationDraftRequest):Promise<wails.SaveExperimentPreparationDraftResponse>;
