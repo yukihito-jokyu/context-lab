@@ -38,7 +38,24 @@ const workspace = {
 const meta = {
   component: ExperimentWorkspacePage,
   title: "Features/Experiments/ExperimentWorkspacePage",
-  args: { experimentId: "EXP-015" },
+  args: {
+    experimentId: "EXP-015",
+    startExperiment: async () => ({
+      data: {
+        experimentId: "EXP-015",
+        operationId: "start-operation-1",
+        runs: [
+          {
+            id: "run-1",
+            state: "running",
+            summary: "要約を実行中です",
+            updatedAt: "2026-08-10T10:25:00+09:00",
+          },
+        ],
+        state: "running",
+      },
+    }),
+  },
 } satisfies Meta<typeof ExperimentWorkspacePage>;
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -66,6 +83,33 @@ export const LoadError: Story = {
       error: {
         code: "EXPERIMENT_WORKSPACE_UNAVAILABLE",
         message: "実験ワークスペースを取得できませんでした。",
+      },
+    }),
+  },
+};
+
+export const Starting: Story = {
+  args: {
+    getExperimentWorkspace: async () => ({ data: workspace }),
+    startExperiment: () => new Promise(() => {}),
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "実験を開始" }),
+    );
+    await expect(
+      await canvas.findByRole("button", { name: "実験を開始しています…" }),
+    ).toBeDisabled();
+  },
+};
+
+export const StartError: Story = {
+  args: {
+    getExperimentWorkspace: async () => ({ data: workspace }),
+    startExperiment: async () => ({
+      error: {
+        code: "START_EXPERIMENT_FAILED",
+        message: "開始に失敗しました。",
       },
     }),
   },

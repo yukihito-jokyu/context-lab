@@ -2,9 +2,10 @@ import {
   AlertCircle,
   ClipboardList,
   FlaskConical,
+  Play,
   RefreshCw,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -22,11 +23,20 @@ import type {
   ExperimentWorkspace,
   GetExperimentWorkspaceService,
 } from "./services/get-experiment-workspace-service";
+import type {
+  StartExperimentService,
+  StartedExperiment,
+} from "./services/start-experiment-service";
 
 type ExperimentWorkspacePageProps = {
   experimentId: string;
   getExperimentWorkspace: GetExperimentWorkspaceService;
+  startExperiment: StartExperimentService;
 };
+
+function createRequestId() {
+  return crypto.randomUUID();
+}
 
 function WorkspaceLoading() {
   return (
@@ -174,10 +184,19 @@ function WorkList({
 export function ExperimentWorkspacePage({
   experimentId,
   getExperimentWorkspace,
+  startExperiment,
 }: ExperimentWorkspacePageProps) {
   const [workspace, setWorkspace] = useState<ExperimentWorkspace>();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<{ code: string; message: string }>();
+  const [startError, setStartError] = useState<{
+    code: string;
+    message: string;
+  }>();
+  const [startedExperiment, setStartedExperiment] =
+    useState<StartedExperiment>();
+  const [isStarting, setIsStarting] = useState(false);
+  const startRequestId = useRef<string | undefined>(undefined);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -203,6 +222,36 @@ export function ExperimentWorkspacePage({
       setIsLoading(false);
     }
   }, [experimentId, getExperimentWorkspace]);
+
+  const start = useCallback(async () => {
+    const requestId = startRequestId.current ?? createRequestId();
+    startRequestId.current = requestId;
+    setIsStarting(true);
+    setStartError(undefined);
+
+    try {
+      const response = await startExperiment({ experimentId, requestId });
+      if (!response.data) {
+        setStartError(
+          response.error ?? {
+            code: "UNKNOWN",
+            message: "実験を開始できませんでした。",
+          },
+        );
+        return;
+      }
+
+      setStartedExperiment(response.data);
+      await load();
+    } catch {
+      setStartError({
+        code: "UNKNOWN",
+        message: "実験を開始できませんでした。",
+      });
+    } finally {
+      setIsStarting(false);
+    }
+  }, [experimentId, load, startExperiment]);
 
   useEffect(() => {
     void load();
@@ -269,6 +318,53 @@ export function ExperimentWorkspacePage({
 
         {!isLoading && !error && workspace && (
           <>
+            <Card id="experiment-workspace-start">
+              <CardHeader className="gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <CardTitle>実験を開始</CardTitle>
+                  <Badge variant="outline">{workspace.state}</Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  固定済みの全promptを同じ条件で実行します。
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {startError && (
+                  <Alert
+                    id="experiment-start-error"
+                    role="alert"
+                    variant="destructive"
+                  >
+                    <AlertCircle />
+                    <AlertTitle>実験を開始できません</AlertTitle>
+                    <AlertDescription>{startError.message}</AlertDescription>
+                  </Alert>
+                )}
+                {startedExperiment && (
+                  <Alert id="experiment-start-success">
+                    <AlertTitle>実験を開始しました</AlertTitle>
+                    <AlertDescription>
+                      操作ID: {startedExperiment.operationId}（
+                      {startedExperiment.runs.length}件のrun）
+                    </AlertDescription>
+                  </Alert>
+                )}
+                <Button
+                  disabled={isStarting || workspace.state !== "ready"}
+                  id="start-experiment-button"
+                  onClick={() => void start()}
+                  type="button"
+                >
+                  <Play />
+                  {isStarting ? "実験を開始しています…" : "実験を開始"}
+                </Button>
+                {workspace.state !== "ready" && !startedExperiment && (
+                  <p className="text-sm text-muted-foreground">
+                    実験開始後の状態です。runの進行状況を確認してください。
+                  </p>
+                )}
+              </CardContent>
+            </Card>
             <FixedConditions workspace={workspace} />
             <Card id="experiment-workspace-operation">
               <CardContent className="p-4 text-sm text-muted-foreground">

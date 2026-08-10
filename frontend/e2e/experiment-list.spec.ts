@@ -10,6 +10,10 @@ type GetExperimentPreparationResponse = Record<string, unknown>;
 type SaveExperimentPreparationDraftResponse = Record<string, unknown>;
 type FixExperimentConditionsResponse = Record<string, unknown>;
 type GetExperimentWorkspaceResponse = Record<string, unknown>;
+type StartExperimentResponse = Record<string, unknown> & {
+  delayMs?: number;
+  result?: Record<string, unknown>;
+};
 type ListPreparationsResponse = Record<string, unknown>;
 
 declare global {
@@ -39,6 +43,10 @@ declare global {
       requestId: string;
       experimentId: string;
       purpose: string;
+    }>;
+    __startExperimentRequests: Array<{
+      requestId: string;
+      experimentId: string;
     }>;
   }
 }
@@ -170,18 +178,42 @@ async function installExperimentPreparationMock(
 async function installExperimentWorkspaceMock(
   page: Page,
   responses: GetExperimentWorkspaceResponse[],
+  startResponses: StartExperimentResponse[] = [
+    {
+      error: {
+        code: "START_EXPERIMENT_FAILED",
+        message: "実験を開始できませんでした。",
+      },
+    },
+  ],
 ) {
   await page.addInitScript({
     content: `
       const workspaceResponses = ${JSON.stringify(responses)};
+      const startResponses = ${JSON.stringify(startResponses)};
       let workspaceCallCount = 0;
+      let startCallCount = 0;
       window.go = window.go || { wails: {} };
+      window.__startExperimentRequests = [];
       window.go.wails.ExperimentWorkspacesHandler = {
         GetExperimentWorkspace: () => {
           const response = workspaceResponses[Math.min(workspaceCallCount, workspaceResponses.length - 1)];
           workspaceCallCount += 1;
           return Promise.resolve(response);
         }
+      };
+      window.go.wails.ExperimentRunsHandler = {
+        StartExperiment: (request) => {
+          window.__startExperimentRequests.push(request);
+          const response = startResponses[Math.min(startCallCount, startResponses.length - 1)];
+          startCallCount += 1;
+          if (response.delayMs) {
+            return new Promise((resolve) => {
+              window.setTimeout(() => resolve(response.result), response.delayMs);
+            });
+          }
+          return Promise.resolve(response);
+        },
       };
     `,
   });
@@ -1126,6 +1158,134 @@ test("実験ワークスペースは取得失敗後に再読込できる", async
   );
   await page.locator("#reload-experiment-workspace-button").click();
   await expect(page.getByText("再読込後の固定条件")).toBeVisible();
+});
+
+test("実験ワークスペースから全promptの実験を開始し、正本を再読込する", async ({
+  page,
+}) => {
+  const readyWorkspace = {
+    experimentId: "EXP-018",
+    state: "ready",
+    fixedConditions: {
+      fixedConditionId: "fixed-4",
+      purpose: "全promptを実行する",
+      environmentConditions: "同一環境",
+      initialInput: "入力",
+      prompts: [
+        { sequenceNo: 1, content: "prompt 1" },
+        { sequenceNo: 2, content: "prompt 2" },
+      ],
+      evaluationAxes: "正確性",
+      fixedAt: confirmedAt,
+    },
+    conditionFixOperation: { operationId: "operation-4" },
+    runs: [],
+    evaluations: [],
+    lastConfirmedAt: confirmedAt,
+  };
+  await installExperimentWorkspaceMock(
+    page,
+    [
+      { data: readyWorkspace },
+      { data: readyWorkspace },
+      {
+        data: {
+          ...readyWorkspace,
+          state: "running",
+          runs: [
+            { id: "run-1", state: "running", updatedAt: confirmedAt },
+            { id: "run-2", state: "queued", updatedAt: confirmedAt },
+          ],
+        },
+      },
+    ],
+    [
+      {
+        data: {
+          experimentId: "EXP-018",
+          operationId: "start-operation-1",
+          runs: [
+            { id: "run-1", state: "running", updatedAt: confirmedAt },
+            { id: "run-2", state: "queued", updatedAt: confirmedAt },
+          ],
+          state: "running",
+        },
+      },
+    ],
+  );
+  await page.goto("/experiments/EXP-018/workspace");
+
+  await page.locator("#start-experiment-button").click();
+
+  await expect(page.locator("#experiment-start-success")).toContainText(
+    "操作ID: start-operation-1（2件のrun）",
+  );
+  await expect(page.getByText("run-1")).toBeVisible();
+  await expect(page.getByText("run-2")).toBeVisible();
+  await expect(page.locator("#start-experiment-button")).toBeDisabled();
+  await expect
+    .poll(() => page.evaluate(() => window.__startExperimentRequests.length))
+    .toBe(1);
+});
+
+test("実験開始の失敗は同じrequest IDで終端再現し、開始中は二重送信しない", async ({
+  page,
+}) => {
+  const workspace = {
+    experimentId: "EXP-019",
+    state: "ready",
+    fixedConditions: {
+      fixedConditionId: "fixed-5",
+      purpose: "再試行する",
+      environmentConditions: "同一環境",
+      initialInput: "入力",
+      prompts: [{ sequenceNo: 1, content: "prompt" }],
+      evaluationAxes: "正確性",
+      fixedAt: confirmedAt,
+    },
+    conditionFixOperation: { operationId: "operation-5" },
+    runs: [],
+    evaluations: [],
+    lastConfirmedAt: confirmedAt,
+  };
+  await installExperimentWorkspaceMock(
+    page,
+    [
+      { data: workspace },
+      { data: workspace },
+      { data: { ...workspace, state: "running" } },
+    ],
+    [
+      {
+        error: {
+          code: "START_EXPERIMENT_FAILED",
+          message: "一時的に開始できません。",
+        },
+      },
+      {
+        error: {
+          code: "START_EXPERIMENT_FAILED",
+          message: "一時的に開始できません。",
+        },
+      },
+    ],
+  );
+  await page.goto("/experiments/EXP-019/workspace");
+
+  await page.locator("#start-experiment-button").click();
+  await expect(page.locator("#experiment-start-error")).toContainText(
+    "一時的に開始できません。",
+  );
+  await page.locator("#start-experiment-button").click();
+  await expect(page.locator("#experiment-start-error")).toContainText(
+    "一時的に開始できません。",
+  );
+  await expect(page.locator("#experiment-start-success")).not.toBeVisible();
+
+  const requests = await page.evaluate(() => window.__startExperimentRequests);
+  expect(requests).toHaveLength(2);
+  expect(requests[0].requestId).toBe(requests[1].requestId);
+  expect(requests[0].experimentId).toBe("EXP-019");
 });
 
 test("実験準備の条件固定中はフォームと下書き保存を無効化する", async ({
