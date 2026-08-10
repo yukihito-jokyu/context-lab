@@ -39,6 +39,12 @@ func TestExperimentComparisonsHandlerGetExperimentComparison(t *testing.T) {
 					UpdatedAt: time.Now(),
 				},
 			},
+			Conclusion: &domain.ExperimentConclusion{
+				ConclusionID: "conclusion-1",
+				Conclusion:   "確定済みの結論",
+				State:        "finalized",
+				FinalizedAt:  time.Date(2026, time.August, 10, 12, 0, 0, 0, time.FixedZone("JST", 9*60*60)),
+			},
 			LastConfirmedAt: time.Now(),
 		},
 	}
@@ -48,6 +54,12 @@ func TestExperimentComparisonsHandlerGetExperimentComparison(t *testing.T) {
 	}
 	if got.Data != nil && (got.Data.Evaluations[0].Result.Status != "complete" || got.Data.Evaluations[0].Reconciliation.LastObservedAt.Location() != time.UTC) {
 		t.Errorf("Evaluations = %+v, want safe result and UTC times", got.Data.Evaluations)
+	}
+	if got.Data == nil || got.Data.Conclusion == nil {
+		t.Fatal("Conclusion = nil, want UTC conclusion DTO")
+	}
+	if got.Data.Conclusion.ID != "conclusion-1" || got.Data.Conclusion.Content != "確定済みの結論" || got.Data.Conclusion.FinalizedAt.Location() != time.UTC {
+		t.Errorf("Conclusion = %+v, want safe UTC conclusion DTO", got.Data.Conclusion)
 	}
 }
 

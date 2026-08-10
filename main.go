@@ -55,6 +55,7 @@ func main() {
 	)
 	experimentWorkspacesHandler := wailshandler.NewExperimentWorkspacesHandler(usecase.NewGetExperimentWorkspace(store), appLogger)
 	experimentComparisonsHandler := wailshandler.NewExperimentComparisonsHandler(usecase.NewGetExperimentComparison(store), appLogger)
+	finalizeExperimentConclusionsHandler := wailshandler.NewFinalizeExperimentConclusionsHandler(usecase.NewFinalizeExperimentConclusion(store), appLogger)
 	experimentRunsHandler := wailshandler.NewExperimentRunsHandler(usecase.NewStartExperiment(store, docker.NewCodexExperimentRunner()), appLogger)
 	experimentRunRetriesHandler := wailshandler.NewExperimentRunRetriesHandler(usecase.NewRetryEndedRun(store), appLogger)
 	experimentEvaluationsHandler := wailshandler.NewExperimentEvaluationsHandler(usecase.NewStartRunEvaluation(store, docker.NewCodexRunEvaluator()), appLogger)
@@ -77,7 +78,7 @@ func main() {
 		Height:      800,
 		AssetServer: &assetserver.Options{Assets: assets},
 		OnStartup:   app.startup,
-		Bind:        []interface{}{experimentsHandler, experimentPreparationsHandler, experimentWorkspacesHandler, experimentComparisonsHandler, experimentRunsHandler, experimentRunRetriesHandler, experimentEvaluationsHandler, evaluationDetailsHandler, experimentRunDetailsHandler, preparationsHandler, experimentBriefingsHandler},
+		Bind:        []interface{}{experimentsHandler, experimentPreparationsHandler, experimentWorkspacesHandler, experimentComparisonsHandler, finalizeExperimentConclusionsHandler, experimentRunsHandler, experimentRunRetriesHandler, experimentEvaluationsHandler, evaluationDetailsHandler, experimentRunDetailsHandler, preparationsHandler, experimentBriefingsHandler},
 	})
 	if err != nil {
 		appLogger.Error(context.Background(), "run application", err)
