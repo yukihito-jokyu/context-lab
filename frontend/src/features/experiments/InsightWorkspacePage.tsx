@@ -1,5 +1,5 @@
 import { AlertCircle, CheckCircle2, Lightbulb, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,12 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { CreateInsightForm } from "./components/CreateInsightForm";
 import { formatExperimentDateTime } from "./lib/format-experiment-date-time";
+import type {
+  CreatedInsight,
+  CreateInsightService,
+} from "./services/create-insight-service";
 import type {
   GetInsightWorkspaceService,
   InsightWorkspace,
@@ -20,12 +25,23 @@ import type {
 function InsightWorkspaceContent({
   workspace,
   initialExperimentId,
+  createInsight,
+  onCreated,
 }: {
   workspace: InsightWorkspace;
   initialExperimentId?: string;
+  createInsight: CreateInsightService;
+  onCreated: (insight: CreatedInsight) => void;
 }) {
   return (
     <div className="space-y-6">
+      <CreateInsightForm
+        candidates={workspace.evidenceCandidates}
+        createInsight={createInsight}
+        initialExperimentId={initialExperimentId}
+        key={workspace.lastConfirmedAt ?? "empty"}
+        onCreated={onCreated}
+      />
       <section aria-labelledby="insight-evidence-candidates-title">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2
@@ -153,6 +169,12 @@ function InsightWorkspaceContent({
                   <p className="whitespace-pre-wrap break-words text-sm">
                     {insight.statement}
                   </p>
+                  <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
+                    適用条件: {insight.applicabilityConditions}
+                  </p>
+                  <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
+                    検証不足: {insight.verificationGaps}
+                  </p>
                   <p className="text-sm text-muted-foreground">
                     根拠 {insight.evidenceCount}件 ・{" "}
                     {formatExperimentDateTime(insight.createdAt)}
@@ -170,13 +192,16 @@ function InsightWorkspaceContent({
 export function InsightWorkspacePage({
   getInsightWorkspace,
   initialExperimentId,
+  createInsight,
 }: {
   getInsightWorkspace: GetInsightWorkspaceService;
   initialExperimentId?: string;
+  createInsight: CreateInsightService;
 }) {
   const [workspace, setWorkspace] = useState<InsightWorkspace>();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<{ code: string; message: string }>();
+  const hasLoadedInitially = useRef(false);
   const load = useCallback(async () => {
     setIsLoading(true);
     setError(undefined);
@@ -203,8 +228,33 @@ export function InsightWorkspacePage({
   }, [getInsightWorkspace]);
 
   useEffect(() => {
+    if (hasLoadedInitially.current) {
+      return;
+    }
+    hasLoadedInitially.current = true;
     void load();
   }, [load]);
+  const appendCreatedInsight = (insight: CreatedInsight) => {
+    setWorkspace((current) =>
+      current
+        ? {
+            ...current,
+            insights: [
+              ...current.insights,
+              {
+                id: insight.insightId,
+                statement: insight.statement,
+                evidenceCount: insight.evidences.length,
+                applicabilityConditions: insight.applicabilityConditions,
+                verificationGaps: insight.verificationGaps,
+                createdAt: insight.createdAt,
+              },
+            ],
+            lastConfirmedAt: insight.createdAt,
+          }
+        : current,
+    );
+  };
 
   return (
     <main className="min-h-screen bg-background p-4 text-foreground sm:p-8">
@@ -264,7 +314,9 @@ export function InsightWorkspacePage({
         )}
         {!isLoading && workspace && (
           <InsightWorkspaceContent
+            createInsight={createInsight}
             initialExperimentId={initialExperimentId}
+            onCreated={appendCreatedInsight}
             workspace={workspace}
           />
         )}

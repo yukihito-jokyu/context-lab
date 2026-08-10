@@ -37,6 +37,13 @@ const meta = {
   title: "Features/Experiments/InsightWorkspacePage",
   args: {
     initialExperimentId: "EXP-26-A",
+    createInsight: async (request) => ({
+      data: {
+        ...request,
+        insightId: "INS-27",
+        createdAt: "2026-08-10T12:00:00Z",
+      },
+    }),
     getInsightWorkspace: async () => ({ data: workspace }),
   },
 } satisfies Meta<typeof InsightWorkspacePage>;
@@ -67,5 +74,30 @@ export const LoadFailure: Story = {
         message: "知見のワークスペースを取得できませんでした。",
       },
     }),
+  },
+};
+
+export const CreateFailureAndRetry: Story = {
+  args: {
+    createInsight: (() => {
+      let calls = 0;
+      return async (request) => {
+        calls += 1;
+        return calls === 1
+          ? {
+              error: {
+                code: "INSIGHT_CREATE_UNAVAILABLE",
+                message: "一時的に記録できません。",
+              },
+            }
+          : {
+              data: {
+                ...request,
+                insightId: "INS-27",
+                createdAt: "2026-08-10T12:00:00Z",
+              },
+            };
+      };
+    })(),
   },
 };
