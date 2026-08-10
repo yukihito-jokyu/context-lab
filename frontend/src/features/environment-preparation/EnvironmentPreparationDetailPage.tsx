@@ -2,6 +2,16 @@ import { AlertCircle, ArrowLeft, ClipboardList, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +23,8 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { formatExperimentDateTime } from "../experiments/lib/format-experiment-date-time";
+import { saveAdoptedEnvironmentConditions } from "./adopted-environment-conditions";
+import type { AdoptCandidateService } from "./services/adopt-candidate-service";
 import type {
   GetPreparationResponse,
   GetPreparationService,
@@ -22,7 +34,9 @@ import type {
 type EnvironmentPreparationDetailPageProps = {
   preparationId: string;
   getPreparation: GetPreparationService;
+  adoptCandidate: AdoptCandidateService;
   onBackToList: () => void;
+  onBeginExperiment?: () => void;
 };
 
 const stateBadgeVariant = (state: string) => {
@@ -69,7 +83,68 @@ function SessionOverview({ data }: { data: PreparationDetail }) {
   );
 }
 
-function Candidates({ data }: { data: PreparationDetail }) {
+function Candidates({
+  data,
+  adoptCandidate,
+  onBeginExperiment,
+}: {
+  data: PreparationDetail;
+  adoptCandidate: AdoptCandidateService;
+  onBeginExperiment?: () => void;
+}) {
+  const [candidateId, setCandidateId] = useState<string>();
+  const [requestId, setRequestId] = useState<string>();
+  const [isAdopting, setIsAdopting] = useState(false);
+  const [adoptError, setAdoptError] = useState<{
+    code: string;
+    message: string;
+  }>();
+  const selectedCandidate = data.candidates.find(
+    (candidate) => candidate.id === candidateId,
+  );
+  const canAdopt =
+    data.state === "completed" &&
+    data.reconciliation.state !== "reconciling" &&
+    !data.failure;
+
+  const beginAdoption = (nextCandidateId: string) => {
+    setCandidateId(nextCandidateId);
+    setRequestId(crypto.randomUUID());
+    setAdoptError(undefined);
+  };
+
+  const adopt = async () => {
+    if (!selectedCandidate || !requestId) return;
+
+    setIsAdopting(true);
+    setAdoptError(undefined);
+    try {
+      const response = await adoptCandidate({
+        requestId,
+        preparationId: data.preparationId,
+        candidateId: selectedCandidate.id,
+      });
+      if (response.data) {
+        saveAdoptedEnvironmentConditions(response.data.environmentConditions);
+        onBeginExperiment?.();
+        return;
+      }
+      setAdoptError(
+        response.error ?? {
+          code: "CANDIDATE_ADOPTION_FAILED",
+          message: "環境候補を採用できませんでした。",
+        },
+      );
+    } catch {
+      setAdoptError({
+        code: "CANDIDATE_ADOPTION_FAILED",
+        message: "環境候補を採用できませんでした。",
+      });
+    } finally {
+      setIsAdopting(false);
+    }
+  };
+
   if (data.candidates.length === 0) {
     return (
       <Empty id="preparation-candidates-empty">
@@ -119,11 +194,72 @@ function Candidates({ data }: { data: PreparationDetail }) {
                     </dd>
                   </div>
                 </dl>
+                <Button
+                  disabled={!canAdopt}
+                  id={`adopt-candidate-button-${candidate.id}`}
+                  onClick={() => beginAdoption(candidate.id)}
+                  type="button"
+                >
+                  この候補を採用して実験を開始
+                </Button>
               </CardContent>
             </Card>
           </li>
         ))}
       </ul>
+      {!canAdopt && (
+        <p className="mt-3 text-sm text-muted-foreground">
+          準備が完了し、照合が確認されると候補を採用できます。
+        </p>
+      )}
+      <AlertDialog
+        onOpenChange={(open) => {
+          if (!open && !isAdopting) setCandidateId(undefined);
+        }}
+        open={Boolean(selectedCandidate)}
+      >
+        <AlertDialogContent id="adopt-candidate-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>環境候補を採用しますか？</AlertDialogTitle>
+            <AlertDialogDescription>
+              採用した環境条件を、新しい実験の準備画面へ引き継ぎます。既存の候補や実験は変更しません。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {selectedCandidate && (
+            <p className="whitespace-pre-wrap break-words rounded-md bg-muted p-3 text-sm">
+              {selectedCandidate.environmentConditions}
+            </p>
+          )}
+          {isAdopting && (
+            <p id="adopt-candidate-pending" role="status">
+              環境候補を採用しています…
+            </p>
+          )}
+          {adoptError && (
+            <Alert
+              id="adopt-candidate-error"
+              role="alert"
+              variant="destructive"
+            >
+              <AlertCircle />
+              <AlertTitle>環境候補を採用できません</AlertTitle>
+              <AlertDescription>{adoptError.message}</AlertDescription>
+            </Alert>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isAdopting}>戻る</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isAdopting}
+              onClick={(event) => {
+                event.preventDefault();
+                void adopt();
+              }}
+            >
+              {isAdopting ? "採用中…" : "採用して新規実験へ"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }
@@ -172,7 +308,9 @@ function Diagnostics({ data }: { data: PreparationDetail }) {
 export function EnvironmentPreparationDetailPage({
   preparationId,
   getPreparation,
+  adoptCandidate,
   onBackToList,
+  onBeginExperiment = () => window.location.assign("/"),
 }: EnvironmentPreparationDetailPageProps) {
   const [data, setData] = useState<PreparationDetail>();
   const [isLoading, setIsLoading] = useState(true);
@@ -281,7 +419,11 @@ export function EnvironmentPreparationDetailPage({
                 </AlertDescription>
               </Alert>
             )}
-            <Candidates data={data} />
+            <Candidates
+              adoptCandidate={adoptCandidate}
+              data={data}
+              onBeginExperiment={onBeginExperiment}
+            />
             <Diagnostics data={data} />
             <Button
               id="reload-preparation-detail-button"

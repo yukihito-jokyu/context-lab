@@ -70,7 +70,7 @@ func main() {
 		return
 	}
 	preparationAdapter := acp.NewCodexPreparationAdapter(workingRoot)
-	preparationsHandler := wailshandler.NewPreparationsHandlerWithStart(usecase.NewListPreparations(store), usecase.NewGetPreparation(store), usecase.NewStartPreparation(store, preparationAdapter, preparationAdapter), appLogger)
+	preparationsHandler := wailshandler.NewPreparationsHandlerWithStartAndAdopt(usecase.NewListPreparations(store), usecase.NewGetPreparation(store), usecase.NewStartPreparation(store, preparationAdapter, preparationAdapter), usecase.NewAdoptCandidate(store), appLogger)
 	insightsHandler := wailshandler.NewInsightsHandlerWithCreate(usecase.NewGetInsightWorkspace(store), usecase.NewCreateInsight(store), appLogger)
 	briefingAdapter := acp.NewCodexBriefingAdapter(filepath.Join(configDirectory, applicationDirectoryName))
 	derivationBriefingsHandler := wailshandler.NewDerivationBriefingsHandler(

@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { takeAdoptedEnvironmentConditions } from "../environment-preparation/adopted-environment-conditions";
 import { formatExperimentDateTime } from "./lib/format-experiment-date-time";
 import type {
   FixExperimentConditionsService,
@@ -377,7 +378,12 @@ export function ExperimentPreparationPage({
       const response = await getExperimentPreparation(experimentId);
       if (response.data) {
         setData(response.data);
-        setDraft(toDraft(response.data));
+        const adoptedEnvironmentConditions = takeAdoptedEnvironmentConditions();
+        setDraft({
+          ...toDraft(response.data),
+          environmentConditions:
+            adoptedEnvironmentConditions ?? response.data.environmentConditions,
+        });
         setSavedAt(undefined);
         return;
       }

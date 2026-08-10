@@ -199,6 +199,95 @@ func TestPreparationsHandlerGetPreparation(t *testing.T) {
 	}
 }
 
+// Wails環境候補採用の成功と安全な失敗返却。
+func TestPreparationsHandlerAdoptCandidate(t *testing.T) {
+	tests := []struct {
+		name      string
+		requestID string
+		reader    handlerPreparationReader
+		wantCode  apperr.Code
+	}{
+		{
+			name:      "完了済み候補を返す",
+			requestID: "request-1",
+			reader: handlerPreparationReader{preparation: domain.PreparationDetail{
+				ID:    "preparation-1",
+				State: domain.EnvironmentPreparationStateCompleted,
+				Candidates: []domain.PreparationCandidate{{
+					ID:                    "candidate-1",
+					EnvironmentConditions: "macOS 15",
+				}},
+			}, found: true},
+		},
+		{
+			name:      "内部エラーを安全なコードへ変換する",
+			requestID: "request-1",
+			reader:    handlerPreparationReader{err: errors.New("private database credential")},
+			wantCode:  apperr.CodeCandidateAdoptionUnavailable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader := tt.reader
+			handler := NewPreparationsHandlerWithStartAndAdopt(usecase.NewListPreparations(&reader), usecase.NewGetPreparation(&reader), nil, usecase.NewAdoptCandidate(&reader), newTestLogger())
+
+			got := handler.AdoptCandidate(tt.requestID, "preparation-1", "candidate-1")
+			if tt.wantCode != "" {
+				if got.Error == nil {
+					t.Fatal("Error = nil, want safe error")
+				}
+				if got.Error.Code != string(tt.wantCode) {
+					t.Errorf("Error.Code = %q, want %q", got.Error.Code, tt.wantCode)
+				}
+
+				return
+			}
+			if got.Error != nil {
+				t.Fatalf("Error = %+v, want nil", got.Error)
+			}
+			if got.Data == nil {
+				t.Fatal("Data = nil, want candidate")
+			}
+			if got.Data.PreparationID != "preparation-1" {
+				t.Errorf("PreparationID = %q, want %q", got.Data.PreparationID, "preparation-1")
+			}
+			if got.Data.CandidateID != "candidate-1" {
+				t.Errorf("CandidateID = %q, want %q", got.Data.CandidateID, "candidate-1")
+			}
+			if got.Data.EnvironmentConditions != "macOS 15" {
+				t.Errorf("EnvironmentConditions = %q, want %q", got.Data.EnvironmentConditions, "macOS 15")
+			}
+		})
+	}
+}
+
+// Wails環境候補採用の未設定command失敗返却。
+func TestPreparationsHandlerAdoptCandidateWithoutCommand(t *testing.T) {
+	handler := NewPreparationsHandler(nil, nil, newTestLogger())
+
+	got := handler.AdoptCandidate("request-1", "preparation-1", "candidate-1")
+	if got.Error == nil {
+		t.Fatal("Error = nil, want safe error")
+	}
+	if got.Error.Code != string(apperr.CodeCandidateAdoptionUnavailable) {
+		t.Errorf("Error.Code = %q, want %q", got.Error.Code, apperr.CodeCandidateAdoptionUnavailable)
+	}
+}
+
+// 環境候補採用の予期しない失敗を安全なDTOへ変換。
+func TestFailAdoptCandidate(t *testing.T) {
+	handler := NewPreparationsHandler(nil, nil, newTestLogger())
+
+	got := handler.failAdoptCandidate(context.Background(), errors.New("private database credential"))
+	if got.Error == nil {
+		t.Fatal("Error = nil, want safe error")
+	}
+	if got.Error.Code != string(apperr.CodeUnexpected) {
+		t.Errorf("Error.Code = %q, want %q", got.Error.Code, apperr.CodeUnexpected)
+	}
+}
+
 // 環境準備一覧の予期しない失敗を安全なDTOへ変換。
 func TestFailListPreparations(t *testing.T) {
 	got := failListPreparations(errors.New("private sidecar credential"))
