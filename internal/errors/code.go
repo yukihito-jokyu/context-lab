@@ -24,6 +24,8 @@ const (
 	CodeExperimentPreparationNotFound    Code = "EXPERIMENT_PREPARATION_NOT_FOUND"
 	CodeExperimentPreparationNotEditable Code = "EXPERIMENT_PREPARATION_NOT_EDITABLE"
 	CodeExperimentPreparationUnavailable Code = "EXPERIMENT_PREPARATION_UNAVAILABLE"
+	CodeDraftRequestInvalid              Code = "DRAFT_REQUEST_INVALID"
+	CodeDraftSaveFailed                  Code = "DRAFT_SAVE_FAILED"
 	CodeOperationTimeout                 Code = "OPERATION_TIMEOUT"
 	CodeOperationCanceled                Code = "OPERATION_CANCELED"
 	CodeUnexpected                       Code = "UNEXPECTED"
@@ -50,6 +52,8 @@ var defaultMessages = map[Code]message{
 	CodeExperimentPreparationNotFound:    "実験準備が見つかりません",
 	CodeExperimentPreparationNotEditable: "この実験準備は編集できる状態ではありません",
 	CodeExperimentPreparationUnavailable: "実験準備を取得できませんでした",
+	CodeDraftRequestInvalid:              "下書き保存要求が不正です",
+	CodeDraftSaveFailed:                  "下書きを保存できませんでした",
 	CodeOperationTimeout:                 "実験一覧の取得がタイムアウトしました",
 	CodeOperationCanceled:                "実験一覧の取得を中止しました",
 	CodeUnexpected:                       "予期しないエラーが発生しました",

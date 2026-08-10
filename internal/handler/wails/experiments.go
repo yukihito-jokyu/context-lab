@@ -84,6 +84,37 @@ type ExperimentPreparationPromptResponse struct {
 	Content    string `json:"content"`
 }
 
+// SaveExperimentPreparationDraftRequest は下書き保存のフォーム値。
+type SaveExperimentPreparationDraftRequest struct {
+	RequestID             string   `json:"requestId"`
+	ExperimentID          string   `json:"experimentId"`
+	Purpose               string   `json:"purpose"`
+	Hypothesis            *string  `json:"hypothesis,omitempty"`
+	EnvironmentConditions string   `json:"environmentConditions"`
+	InitialInput          string   `json:"initialInput"`
+	Prompts               []string `json:"prompts"`
+	EvaluationAxes        string   `json:"evaluationAxes"`
+}
+
+// SaveExperimentPreparationDraftResponse は下書き保存の成功または失敗結果。
+type SaveExperimentPreparationDraftResponse struct {
+	Data  *SaveExperimentPreparationDraftData `json:"data,omitempty"`
+	Error *ErrorResponse                      `json:"error,omitempty"`
+}
+
+// SaveExperimentPreparationDraftData は保存済み下書きの画面DTO。
+type SaveExperimentPreparationDraftData struct {
+	ExperimentID          string                                `json:"experimentId"`
+	State                 string                                `json:"state"`
+	Purpose               string                                `json:"purpose"`
+	Hypothesis            *string                               `json:"hypothesis,omitempty"`
+	EnvironmentConditions string                                `json:"environmentConditions"`
+	InitialInput          string                                `json:"initialInput"`
+	Prompts               []ExperimentPreparationPromptResponse `json:"prompts"`
+	EvaluationAxes        string                                `json:"evaluationAxes"`
+	SavedAt               time.Time                             `json:"savedAt"`
+}
+
 // ExperimentPreparationSourceResponse は採用元の安全な表示用情報。
 type ExperimentPreparationSourceResponse struct {
 	State     string `json:"state"`
@@ -101,13 +132,67 @@ type ExperimentPreparationRequiredFieldsResponse struct {
 
 // ExperimentPreparationsHandler は実験準備queryのWails binding。
 type ExperimentPreparationsHandler struct {
-	getExperimentPreparation *usecase.GetExperimentPreparation
-	logger                   logger.Logger
+	getExperimentPreparation       *usecase.GetExperimentPreparation
+	saveExperimentPreparationDraft *usecase.SaveExperimentPreparationDraft
+	logger                         logger.Logger
 }
 
 // NewExperimentPreparationsHandler は実験準備bindingを生成。
-func NewExperimentPreparationsHandler(getExperimentPreparation *usecase.GetExperimentPreparation, appLogger logger.Logger) *ExperimentPreparationsHandler {
-	return &ExperimentPreparationsHandler{getExperimentPreparation: getExperimentPreparation, logger: appLogger}
+func NewExperimentPreparationsHandler(getExperimentPreparation *usecase.GetExperimentPreparation, appLogger logger.Logger, saveExperimentPreparationDraft ...*usecase.SaveExperimentPreparationDraft) *ExperimentPreparationsHandler {
+	handler := &ExperimentPreparationsHandler{getExperimentPreparation: getExperimentPreparation, logger: appLogger}
+	if len(saveExperimentPreparationDraft) != 0 {
+		handler.saveExperimentPreparationDraft = saveExperimentPreparationDraft[0]
+	}
+
+	return handler
+}
+
+// SaveExperimentPreparationDraft はフォーム下書きを画面向けDTOで保存。
+func (h *ExperimentPreparationsHandler) SaveExperimentPreparationDraft(request SaveExperimentPreparationDraftRequest) SaveExperimentPreparationDraftResponse {
+	ctx := context.Background()
+	h.logger.Info(ctx, "save experiment preparation draft called")
+
+	if h.saveExperimentPreparationDraft == nil {
+		response := failSaveExperimentPreparationDraft(apperr.New(apperr.CodeDraftSaveFailed))
+		h.logger.ErrorCode(ctx, "save experiment preparation draft failed", response.Error.Code, slog.String("operation", "save_experiment_preparation_draft"))
+
+		return response
+	}
+	prompts := make([]domain.ExperimentPreparationPrompt, 0, len(request.Prompts))
+	for index, content := range request.Prompts {
+		prompts = append(prompts, domain.ExperimentPreparationPrompt{SequenceNo: index + 1, Content: content})
+	}
+	draft, err := h.saveExperimentPreparationDraft.Execute(ctx, domain.ExperimentPreparationDraft{
+		RequestID: request.RequestID, ExperimentID: request.ExperimentID, Purpose: request.Purpose, Hypothesis: request.Hypothesis, EnvironmentConditions: request.EnvironmentConditions, InitialInput: request.InitialInput, Prompts: prompts, EvaluationAxes: request.EvaluationAxes,
+	})
+	if err != nil {
+		response := failSaveExperimentPreparationDraft(err)
+		h.logger.ErrorCode(ctx, "save experiment preparation draft failed", response.Error.Code, slog.String("operation", "save_experiment_preparation_draft"))
+
+		return response
+	}
+
+	return SaveExperimentPreparationDraftResponse{Data: &SaveExperimentPreparationDraftData{ExperimentID: draft.ExperimentID, State: "preparing", Purpose: draft.Purpose, Hypothesis: draft.Hypothesis, EnvironmentConditions: draft.EnvironmentConditions, InitialInput: draft.InitialInput, Prompts: toExperimentPreparationPromptResponses(draft.Prompts), EvaluationAxes: draft.EvaluationAxes, SavedAt: draft.SavedAt}}
+}
+
+// failSaveExperimentPreparationDraft は内部エラーを安全な画面エラーへ変換。
+func failSaveExperimentPreparationDraft(err error) SaveExperimentPreparationDraftResponse {
+	appErr := apperr.As(err)
+	if appErr == nil {
+		appErr = apperr.NewUnexpected(err)
+	}
+
+	return SaveExperimentPreparationDraftResponse{Error: &ErrorResponse{Code: string(appErr.Code), Message: appErr.Error()}}
+}
+
+// toExperimentPreparationPromptResponses はdomain prompt群を画面DTOへ変換。
+func toExperimentPreparationPromptResponses(prompts []domain.ExperimentPreparationPrompt) []ExperimentPreparationPromptResponse {
+	responses := make([]ExperimentPreparationPromptResponse, 0, len(prompts))
+	for _, prompt := range prompts {
+		responses = append(responses, ExperimentPreparationPromptResponse{SequenceNo: prompt.SequenceNo, Content: prompt.Content})
+	}
+
+	return responses
 }
 
 // GetExperimentPreparation は準備中実験を画面向けDTOで返す。

@@ -102,6 +102,19 @@ type ExperimentPreparationPrompt struct {
 	Content    string
 }
 
+// ExperimentPreparationDraft は準備中実験へ保存する編集下書き。
+type ExperimentPreparationDraft struct {
+	RequestID             string
+	ExperimentID          string
+	Purpose               string
+	Hypothesis            *string
+	EnvironmentConditions string
+	InitialInput          string
+	Prompts               []ExperimentPreparationPrompt
+	EvaluationAxes        string
+	SavedAt               time.Time
+}
+
 // ExperimentPreparationSource は採用済みブリーフの安全な表示用情報。
 type ExperimentPreparationSource struct {
 	State     string
