@@ -1348,6 +1348,105 @@ func TestExperimentRunsHandlerFailureFallbacks(t *testing.T) {
 	}
 }
 
+// ExperimentEvaluationsHandlerの開始成功と安全な失敗DTO。
+func TestExperimentEvaluationsHandlerStartRunEvaluation(t *testing.T) {
+	tests := []struct {
+		name     string
+		request  StartRunEvaluationRequest
+		wantCode string
+	}{
+		{
+			name: "評価開始結果を返す",
+			request: StartRunEvaluationRequest{
+				RequestID: "request-1",
+				RunID:     "run-1",
+			},
+		},
+		{
+			name:     "入力不足を安全なDTOで返す",
+			request:  StartRunEvaluationRequest{},
+			wantCode: string(apperr.CodeRunEvaluationRequestInvalid),
+		},
+		{
+			name: "未設定handlerを安全なDTOで返す",
+			request: StartRunEvaluationRequest{
+				RequestID: "request-1",
+				RunID:     "run-1",
+			},
+			wantCode: string(apperr.CodeRunEvaluationFailed),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var handler *ExperimentEvaluationsHandler
+			if tt.name == "未設定handlerを安全なDTOで返す" {
+				handler = NewExperimentEvaluationsHandler(nil, newTestLogger())
+			} else {
+				handler = NewExperimentEvaluationsHandler(usecase.NewStartRunEvaluation(&handlerRunEvaluationStore{}, handlerRunEvaluator{}), newTestLogger())
+			}
+			got := handler.StartRunEvaluation(tt.request)
+			if tt.wantCode != "" {
+				if got.Error == nil || got.Error.Code != tt.wantCode {
+					t.Errorf("Error = %+v, want code %q", got.Error, tt.wantCode)
+				}
+
+				return
+			}
+			if got.Data == nil {
+				t.Fatal("Data = nil, want evaluation result")
+			}
+			if got.Data.RunID != tt.request.RunID || got.Data.EvaluationID == "" || got.Data.OperationID == "" || got.Data.State != domain.ExperimentEvaluationStateStarting {
+				t.Errorf("Data = %+v, want safe starting evaluation", got.Data)
+			}
+		})
+	}
+}
+
+// run評価開始失敗の安全な変換。
+func TestFailStartRunEvaluation(t *testing.T) {
+	got := failStartRunEvaluation(errors.New("private evaluator error"))
+	if got.Error == nil {
+		t.Fatal("Error = nil, want safe error")
+	}
+	if got.Error.Code != string(apperr.CodeUnexpected) {
+		t.Errorf("Error.Code = %q, want %q", got.Error.Code, apperr.CodeUnexpected)
+	}
+}
+
+// handlerRunEvaluationStore は評価永続化portのtest double。
+type handlerRunEvaluationStore struct{}
+
+// BeginRunEvaluation は評価開始結果を返却。
+func (*handlerRunEvaluationStore) BeginRunEvaluation(context.Context, string, string) (domain.ExperimentRunEvaluation, bool, error) {
+	return domain.ExperimentRunEvaluation{
+		RunID:          "run-1",
+		EvaluationID:   "evaluation-1",
+		OperationID:    "operation-1",
+		State:          domain.ExperimentEvaluationStateStarting,
+		RunSummary:     "run要約",
+		Purpose:        "目的",
+		EvaluationAxes: "評価軸",
+	}, true, nil
+}
+
+// CompleteRunEvaluation は評価完了を受理。
+func (*handlerRunEvaluationStore) CompleteRunEvaluation(context.Context, string, string) error {
+	return nil
+}
+
+// FailRunEvaluation は評価失敗を受理。
+func (*handlerRunEvaluationStore) FailRunEvaluation(context.Context, string, string) error {
+	return nil
+}
+
+// handlerRunEvaluator は隔離評価portのtest double。
+type handlerRunEvaluator struct{}
+
+// EvaluateRun は安全な要約を返却。
+func (handlerRunEvaluator) EvaluateRun(context.Context, domain.ExperimentEvaluationRequest) (string, error) {
+	return "評価要約", nil
+}
+
 // handlerExperimentStart はhandler検証用の開始結果を返す。
 func handlerExperimentStart() domain.ExperimentStart {
 	return domain.ExperimentStart{
