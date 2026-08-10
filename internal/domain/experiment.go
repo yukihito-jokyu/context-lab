@@ -162,6 +162,31 @@ type ExperimentRunRetry struct {
 	CreatedAt    time.Time
 }
 
+// ExperimentComparison は同一実験内の評価結果を比較表示する安全な正本。
+type ExperimentComparison struct {
+	Experiment      ExperimentComparisonExperiment
+	Evaluations     []ExperimentComparisonEvaluation
+	LastConfirmedAt time.Time
+}
+
+// ExperimentComparisonExperiment は比較対象の固定済み実験条件。
+type ExperimentComparisonExperiment struct {
+	ID             string
+	Purpose        string
+	EvaluationAxes string
+}
+
+// ExperimentComparisonEvaluation は一件の評価とrun要約の比較用情報。
+type ExperimentComparisonEvaluation struct {
+	EvaluationID   string
+	RunID          string
+	State          string
+	RunSummary     *string
+	Result         ExperimentEvaluationResult
+	Reconciliation ExperimentEvaluationReconciliation
+	UpdatedAt      time.Time
+}
+
 // ExperimentRunDetail はrun詳細画面が再表示する安全な観測結果。
 type ExperimentRunDetail struct {
 	Run             ExperimentRunFact

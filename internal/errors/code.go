@@ -55,6 +55,9 @@ const (
 	CodeRunRetryNotAllowed                Code = "RUN_RETRY_NOT_ALLOWED"
 	CodeRunRetryRequestConflict           Code = "RUN_RETRY_REQUEST_CONFLICT"
 	CodeRunRetryUnavailable               Code = "RUN_RETRY_UNAVAILABLE"
+	CodeExperimentComparisonInvalid       Code = "EXPERIMENT_COMPARISON_INVALID"
+	CodeExperimentComparisonNotFound      Code = "EXPERIMENT_COMPARISON_NOT_FOUND"
+	CodeExperimentComparisonUnavailable   Code = "EXPERIMENT_COMPARISON_UNAVAILABLE"
 	CodeOperationTimeout                  Code = "OPERATION_TIMEOUT"
 	CodeOperationCanceled                 Code = "OPERATION_CANCELED"
 	CodeUnexpected                        Code = "UNEXPECTED"
@@ -112,6 +115,9 @@ var defaultMessages = map[Code]message{
 	CodeRunRetryNotAllowed:                "失敗したrunだけを再実行できます",
 	CodeRunRetryRequestConflict:           "この再実行要求は別のrunに使用されています",
 	CodeRunRetryUnavailable:               "再実行用runを作成できませんでした",
+	CodeExperimentComparisonInvalid:       "実験比較要求が不正です",
+	CodeExperimentComparisonNotFound:      "比較する実験が見つかりません",
+	CodeExperimentComparisonUnavailable:   "実験比較を取得できませんでした",
 	CodeOperationTimeout:                  "実験一覧の取得がタイムアウトしました",
 	CodeOperationCanceled:                 "実験一覧の取得を中止しました",
 	CodeUnexpected:                        "予期しないエラーが発生しました",

@@ -24,6 +24,7 @@ type RetryEndedRunResponse = Record<string, unknown> & {
   delayMs?: number;
   result?: Record<string, unknown>;
 };
+type GetExperimentComparisonResponse = Record<string, unknown>;
 type ListPreparationsResponse = Record<string, unknown>;
 
 declare global {
@@ -319,6 +320,15 @@ async function installRetryEndedRunMock(
         },
       };
     `,
+  });
+}
+
+async function installComparisonMock(
+  page: Page,
+  responses: GetExperimentComparisonResponse[],
+) {
+  await page.addInitScript({
+    content: `const r=${JSON.stringify(responses)};let i=0;window.go=window.go||{wails:{}};window.go.wails.ExperimentComparisonsHandler={GetExperimentComparison:()=>Promise.resolve(r[Math.min(i++,r.length-1)])};`,
   });
 }
 
@@ -1498,6 +1508,56 @@ test("評価詳細は根拠と確定した評価結果を表示する", async ({
   await expect(page.locator("#evaluation-detail-result")).toContainText(
     "評価軸を満たしています。",
   );
+});
+
+test("実験比較は根拠、空、照合、失敗再読込と詳細導線を表示する", async ({
+  page,
+}) => {
+  const base = {
+    experiment: { id: "EXP-C", purpose: "比較目的", evaluationAxes: "正確性" },
+    lastConfirmedAt: confirmedAt,
+  };
+  await installComparisonMock(page, [
+    {
+      data: {
+        ...base,
+        evaluations: [
+          {
+            evaluationId: "eval-c",
+            runId: "run-c",
+            state: "completed",
+            runSummary: "実行根拠",
+            result: { status: "complete", summary: "比較結果" },
+            reconciliation: {
+              state: "reconciling",
+              lastObservedAt: confirmedAt,
+            },
+            updatedAt: confirmedAt,
+          },
+        ],
+      },
+    },
+  ]);
+  await page.goto("/experiments/EXP-C/comparison");
+  await expect(page.getByText("根拠（実行要約）: 実行根拠")).toBeVisible();
+  await expect(page.getByText("評価結果を照合しています")).toBeVisible();
+  await expect(page.getByRole("button", { name: "run詳細" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "評価詳細" })).toBeVisible();
+  await page.getByRole("button", { name: "run詳細" }).click();
+  await expect(page).toHaveURL(/\/experiments\/EXP-C\/runs\/run-c$/);
+
+  await page.goto("/experiments/EXP-C/comparison");
+  await page.getByRole("button", { name: "評価詳細" }).click();
+  await expect(page).toHaveURL(/\/evaluations\/eval-c$/);
+
+  await installComparisonMock(page, [
+    { error: { code: "UNAVAILABLE", message: "失敗" } },
+    { data: { ...base, evaluations: [] } },
+  ]);
+  await page.goto("/experiments/EXP-C/comparison");
+  await expect(page.locator("#comparison-error")).toContainText("失敗");
+  await page.locator("#reload-comparison-button").click();
+  await expect(page.locator("#empty-comparison")).toBeVisible();
 });
 
 test("評価詳細は不能理由を表示し、取得失敗後に再読込できる", async ({
