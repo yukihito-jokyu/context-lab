@@ -36,7 +36,7 @@ rtk gh pr status
 - cleanな`main`なら新規選定へ進む。
 - `feature/<番号>`上ならIssue、差分、open PRを照合し、同じ仕事だと確認できる場合だけ再開する。
 - 無関係な未コミット変更があれば停止する。自動stashや破棄はしない。
-- GitHub認証またはネットワークが使えなければ、ローカル実装だけへ暗黙に縮小せず停止する。
+- GitHub APIが使えなければ、ローカル実装だけへ暗黙に縮小せず停止する。AIは`gh auth login`を実行または利用者へ依頼せず、Issue・PR取得などのGitHub API呼び出しで利用可否を判定する。
 
 ## Issue選定
 
