@@ -579,6 +579,85 @@ func TestGetExperimentPreparationExecute(t *testing.T) {
 	}
 }
 
+// GetExperimentWorkspaceの入力検証とport失敗正規化。
+func TestGetExperimentWorkspaceExecute(t *testing.T) {
+	tests := []struct {
+		name         string
+		experimentID string
+		reader       fakeExperimentWorkspaceReader
+		wantCode     apperr.Code
+		wantFound    bool
+	}{
+		{
+			name:         "空のexperiment IDを拒否する",
+			experimentID: " ",
+			wantCode:     apperr.CodeExperimentWorkspaceRequestInvalid,
+		},
+		{
+			name:         "未知experimentを区別する",
+			experimentID: "missing",
+			wantCode:     apperr.CodeExperimentWorkspaceNotFound,
+		},
+		{
+			name:         "永続化失敗を取得失敗へ正規化する",
+			experimentID: "experiment-1",
+			reader: fakeExperimentWorkspaceReader{
+				err: errors.New("repository failure"),
+			},
+			wantCode: apperr.CodeExperimentWorkspaceUnavailable,
+		},
+		{
+			name:         "取消を呼び出し元へ返す",
+			experimentID: "experiment-1",
+			reader: fakeExperimentWorkspaceReader{
+				err: context.Canceled,
+			},
+			wantCode: apperr.CodeOperationCanceled,
+		},
+		{
+			name:         "後続状態の固定済みexperimentを返す",
+			experimentID: "experiment-1",
+			reader: fakeExperimentWorkspaceReader{
+				found: true,
+				workspace: domain.ExperimentWorkspace{
+					ExperimentID: "experiment-1",
+					State:        "evaluating",
+				},
+			},
+			wantFound: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NewGetExperimentWorkspace(tt.reader).Execute(context.Background(), tt.experimentID)
+			if tt.wantCode != "" {
+				assertBriefingErrorCode(t, err, tt.wantCode)
+
+				return
+			}
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if gotFound := got.ExperimentID != ""; gotFound != tt.wantFound {
+				t.Errorf("workspace found = %v, want %v", gotFound, tt.wantFound)
+			}
+		})
+	}
+}
+
+// fakeExperimentWorkspaceReader は実験ワークスペースquery用のtest double。
+type fakeExperimentWorkspaceReader struct {
+	workspace domain.ExperimentWorkspace
+	found     bool
+	err       error
+}
+
+// GetExperimentWorkspace は指定済み実験ワークスペースを返却。
+func (f fakeExperimentWorkspaceReader) GetExperimentWorkspace(context.Context, string) (domain.ExperimentWorkspace, bool, error) {
+	return f.workspace, f.found, f.err
+}
+
 // fakeExperimentPreparationReader は実験準備query用のtest double。
 type fakeExperimentPreparationReader struct {
 	preparation domain.ExperimentPreparation

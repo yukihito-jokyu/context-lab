@@ -166,6 +166,138 @@ type ExperimentPreparationRequiredFieldsResponse struct {
 	EvaluationAxes        bool `json:"evaluationAxes"`
 }
 
+// GetExperimentWorkspaceResponse は実験ワークスペースqueryの成功または失敗結果。
+type GetExperimentWorkspaceResponse struct {
+	Data  *GetExperimentWorkspaceData `json:"data,omitempty"`
+	Error *ErrorResponse              `json:"error,omitempty"`
+}
+
+// GetExperimentWorkspaceData は画面へ返す固定条件と進行状況。
+type GetExperimentWorkspaceData struct {
+	ExperimentID          string                                 `json:"experimentId"`
+	State                 string                                 `json:"state"`
+	FixedConditions       ExperimentWorkspaceFixedConditionsData `json:"fixedConditions"`
+	ConditionFixOperation ExperimentConditionFixOperationData    `json:"conditionFixOperation"`
+	Runs                  []ExperimentWorkspaceRunData           `json:"runs"`
+	Evaluations           []ExperimentWorkspaceEvaluationData    `json:"evaluations"`
+	LastConfirmedAt       time.Time                              `json:"lastConfirmedAt"`
+}
+
+// ExperimentWorkspaceFixedConditionsData は画面表示用の不変条件。
+type ExperimentWorkspaceFixedConditionsData struct {
+	FixedConditionID      string                                `json:"fixedConditionId"`
+	Purpose               string                                `json:"purpose"`
+	Hypothesis            *string                               `json:"hypothesis,omitempty"`
+	EnvironmentConditions string                                `json:"environmentConditions"`
+	InitialInput          string                                `json:"initialInput"`
+	Prompts               []ExperimentPreparationPromptResponse `json:"prompts"`
+	EvaluationAxes        string                                `json:"evaluationAxes"`
+	FixedAt               time.Time                             `json:"fixedAt"`
+}
+
+// ExperimentConditionFixOperationData は固定操作の安全な識別子。
+type ExperimentConditionFixOperationData struct {
+	OperationID string    `json:"operationId"`
+	FixedAt     time.Time `json:"fixedAt"`
+}
+
+// ExperimentWorkspaceRunData はrunの安全な進行状況。
+type ExperimentWorkspaceRunData struct {
+	ID        string    `json:"id"`
+	State     string    `json:"state"`
+	Summary   *string   `json:"summary,omitempty"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// ExperimentWorkspaceEvaluationData はevaluationの安全な進行状況。
+type ExperimentWorkspaceEvaluationData struct {
+	ID        string    `json:"id"`
+	State     string    `json:"state"`
+	Summary   *string   `json:"summary,omitempty"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// ExperimentWorkspacesHandler は実験ワークスペースqueryのWails binding。
+type ExperimentWorkspacesHandler struct {
+	getExperimentWorkspace *usecase.GetExperimentWorkspace
+	logger                 logger.Logger
+}
+
+// NewExperimentWorkspacesHandler は実験ワークスペースbindingを生成。
+func NewExperimentWorkspacesHandler(getExperimentWorkspace *usecase.GetExperimentWorkspace, appLogger logger.Logger) *ExperimentWorkspacesHandler {
+	return &ExperimentWorkspacesHandler{getExperimentWorkspace: getExperimentWorkspace, logger: appLogger}
+}
+
+// GetExperimentWorkspace は固定条件と進行状況を画面向けDTOで返す。
+func (h *ExperimentWorkspacesHandler) GetExperimentWorkspace(experimentID string) GetExperimentWorkspaceResponse {
+	ctx := context.Background()
+	h.logger.Debug(ctx, "get experiment workspace called")
+
+	workspace, err := h.getExperimentWorkspace.Execute(ctx, experimentID)
+	if err != nil {
+		response := failGetExperimentWorkspace(err)
+		h.logger.ErrorCode(ctx, "get experiment workspace failed", response.Error.Code, slog.String("operation", "get_experiment_workspace"))
+
+		return response
+	}
+
+	data := toGetExperimentWorkspaceData(workspace)
+
+	return GetExperimentWorkspaceResponse{Data: &data}
+}
+
+// failGetExperimentWorkspace は内部エラーを安全な画面エラーへ変換。
+func failGetExperimentWorkspace(err error) GetExperimentWorkspaceResponse {
+	appErr := apperr.As(err)
+	if appErr == nil {
+		appErr = apperr.NewUnexpected(err)
+	}
+
+	return GetExperimentWorkspaceResponse{Error: &ErrorResponse{Code: string(appErr.Code), Message: appErr.Error()}}
+}
+
+// toGetExperimentWorkspaceData はdomainワークスペースを画面DTOへ変換。
+func toGetExperimentWorkspaceData(workspace domain.ExperimentWorkspace) GetExperimentWorkspaceData {
+	return GetExperimentWorkspaceData{
+		ExperimentID: workspace.ExperimentID,
+		State:        workspace.State,
+		FixedConditions: ExperimentWorkspaceFixedConditionsData{
+			FixedConditionID:      workspace.FixedConditions.FixedConditionID,
+			Purpose:               workspace.FixedConditions.Purpose,
+			Hypothesis:            workspace.FixedConditions.Hypothesis,
+			EnvironmentConditions: workspace.FixedConditions.EnvironmentConditions,
+			InitialInput:          workspace.FixedConditions.InitialInput,
+			Prompts:               toExperimentPreparationPromptResponses(workspace.FixedConditions.Prompts),
+			EvaluationAxes:        workspace.FixedConditions.EvaluationAxes,
+			FixedAt:               workspace.FixedConditions.FixedAt.UTC(),
+		},
+		ConditionFixOperation: ExperimentConditionFixOperationData{OperationID: workspace.ConditionFixOperationID, FixedAt: workspace.ConditionFixOperationAt.UTC()},
+		Runs:                  toExperimentWorkspaceRunData(workspace.Runs),
+		Evaluations:           toExperimentWorkspaceEvaluationData(workspace.Evaluations),
+		LastConfirmedAt:       workspace.LastConfirmedAt.UTC(),
+	}
+}
+
+// toExperimentWorkspaceRunData はdomain runを画面DTOへ変換する。
+func toExperimentWorkspaceRunData(runs []domain.ExperimentWorkspaceRun) []ExperimentWorkspaceRunData {
+	data := make([]ExperimentWorkspaceRunData, 0, len(runs))
+	for _, run := range runs {
+		data = append(data, ExperimentWorkspaceRunData{ID: run.ID, State: run.State, Summary: run.Summary, UpdatedAt: run.UpdatedAt.UTC()})
+	}
+
+	return data
+}
+
+// toExperimentWorkspaceEvaluationData はdomain evaluationを画面DTOへ変換する。
+func toExperimentWorkspaceEvaluationData(evaluations []domain.ExperimentWorkspaceEvaluation) []ExperimentWorkspaceEvaluationData {
+	data := make([]ExperimentWorkspaceEvaluationData, 0, len(evaluations))
+	for _, evaluation := range evaluations {
+		data = append(data, ExperimentWorkspaceEvaluationData{ID: evaluation.ID, State: evaluation.State, Summary: evaluation.Summary, UpdatedAt: evaluation.UpdatedAt.UTC()})
+	}
+
+	return data
+}
+
 // ExperimentPreparationsHandler は実験準備queryのWails binding。
 type ExperimentPreparationsHandler struct {
 	getExperimentPreparation       *usecase.GetExperimentPreparation

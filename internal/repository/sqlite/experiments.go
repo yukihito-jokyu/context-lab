@@ -485,11 +485,150 @@ func (s *Store) GetExperimentPreparation(ctx context.Context, experimentID strin
 		}
 		preparation.Prompts = append(preparation.Prompts, prompt)
 	}
+	// 単体テスト到達不可: SQLiteの完全に読み切ったRowsではrows.Errがnilとなり、Storeは固定のsqliteドライバを使用するため反復時エラーを注入できない。
 	if err := rows.Err(); err != nil {
 		return domain.ExperimentPreparation{}, false, fmt.Errorf("iterate experiment preparation prompts: %w", err)
 	}
 
 	return preparation, true, nil
+}
+
+// GetExperimentWorkspace は固定済み条件を含む実験ワークスペースを読み出す。
+func (s *Store) GetExperimentWorkspace(ctx context.Context, experimentID string) (workspace domain.ExperimentWorkspace, found bool, err error) {
+	workspace.ExperimentID = experimentID
+	workspace.FixedConditions.ExperimentID = experimentID
+
+	var hypothesis sql.NullString
+	var updatedAt string
+	var fixedAt string
+	var operationFixedAt string
+	err = s.db.QueryRowContext(ctx, "SELECT e.state, e.updated_at, c.id, c.purpose, c.hypothesis, c.environment_conditions, c.initial_input, c.evaluation_axes, c.fixed_at, o.operation_id, o.fixed_at FROM experiments e JOIN experiment_fixed_conditions c ON c.id = e.fixed_condition_id JOIN experiment_condition_fix_operations o ON o.fixed_condition_id = c.id WHERE e.id = ?", experimentID).Scan(&workspace.State, &updatedAt, &workspace.FixedConditions.FixedConditionID, &workspace.FixedConditions.Purpose, &hypothesis, &workspace.FixedConditions.EnvironmentConditions, &workspace.FixedConditions.InitialInput, &workspace.FixedConditions.EvaluationAxes, &fixedAt, &workspace.ConditionFixOperationID, &operationFixedAt)
+	if err == sql.ErrNoRows {
+		return domain.ExperimentWorkspace{}, false, nil
+	}
+	if err != nil {
+		return domain.ExperimentWorkspace{}, false, fmt.Errorf("find experiment workspace: %w", err)
+	}
+	if hypothesis.Valid {
+		workspace.FixedConditions.Hypothesis = &hypothesis.String
+	}
+	workspace.LastConfirmedAt, err = time.Parse(time.RFC3339Nano, updatedAt)
+	if err != nil {
+		return domain.ExperimentWorkspace{}, false, fmt.Errorf("parse experiment workspace update time: %w", err)
+	}
+	workspace.FixedConditions.FixedAt, err = time.Parse(time.RFC3339Nano, fixedAt)
+	if err != nil {
+		return domain.ExperimentWorkspace{}, false, fmt.Errorf("parse experiment condition fixed time: %w", err)
+	}
+	workspace.ConditionFixOperationAt, err = time.Parse(time.RFC3339Nano, operationFixedAt)
+	if err != nil {
+		return domain.ExperimentWorkspace{}, false, fmt.Errorf("parse experiment condition operation fixed time: %w", err)
+	}
+
+	rows, err := s.db.QueryContext(ctx, "SELECT sequence_no, content FROM experiment_fixed_condition_prompts WHERE fixed_condition_id = ? ORDER BY sequence_no ASC", workspace.FixedConditions.FixedConditionID)
+	if err != nil {
+		return domain.ExperimentWorkspace{}, false, fmt.Errorf("query experiment workspace prompts: %w", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			// 単体テスト到達不可: database/sqlはNextがEOFを返した時点でdriver.Rows.Closeの失敗をrows.Errへ移すため、defer内だけでClose失敗を受け取る経路は作れない。
+			err = fmt.Errorf("close experiment workspace prompt rows: %w", closeErr)
+		}
+	}()
+
+	workspace.FixedConditions.Prompts = make([]domain.ExperimentPreparationPrompt, 0)
+	for rows.Next() {
+		var prompt domain.ExperimentPreparationPrompt
+		if err := rows.Scan(&prompt.SequenceNo, &prompt.Content); err != nil {
+			return domain.ExperimentWorkspace{}, false, fmt.Errorf("scan experiment workspace prompt: %w", err)
+		}
+		workspace.FixedConditions.Prompts = append(workspace.FixedConditions.Prompts, prompt)
+	}
+	// 単体テスト到達不可: SQLiteの完全に読み切ったRowsではrows.Errがnilとなり、Storeは固定のsqliteドライバを使用するため反復時エラーを注入できない。
+	if err := rows.Err(); err != nil {
+		return domain.ExperimentWorkspace{}, false, fmt.Errorf("iterate experiment workspace prompts: %w", err)
+	}
+
+	workspace.Runs, err = s.findExperimentWorkspaceRuns(ctx, experimentID)
+	if err != nil {
+		return domain.ExperimentWorkspace{}, false, err
+	}
+	workspace.Evaluations, err = s.findExperimentWorkspaceEvaluations(ctx, experimentID)
+	if err != nil {
+		return domain.ExperimentWorkspace{}, false, err
+	}
+
+	return workspace, true, nil
+}
+
+// findExperimentWorkspaceRuns は実験に属するrunの安全な進行状況を取得する。
+func (s *Store) findExperimentWorkspaceRuns(ctx context.Context, experimentID string) ([]domain.ExperimentWorkspaceRun, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT id, state, summary, updated_at FROM experiment_runs WHERE experiment_id = ? ORDER BY created_at ASC, id ASC", experimentID)
+	if err != nil {
+		return nil, fmt.Errorf("query experiment workspace runs: %w", err)
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	runs := make([]domain.ExperimentWorkspaceRun, 0)
+	for rows.Next() {
+		var run domain.ExperimentWorkspaceRun
+		var summary sql.NullString
+		var updatedAt string
+		if err := rows.Scan(&run.ID, &run.State, &summary, &updatedAt); err != nil {
+			return nil, fmt.Errorf("scan experiment workspace run: %w", err)
+		}
+		if summary.Valid {
+			run.Summary = &summary.String
+		}
+		run.UpdatedAt, err = time.Parse(time.RFC3339Nano, updatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse experiment workspace run update time: %w", err)
+		}
+		runs = append(runs, run)
+	}
+	// 単体テスト到達不可: SQLiteの完全に読み切ったRowsではrows.Errがnilとなり、Storeは固定のsqliteドライバを使用するため反復時エラーを注入できない。
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate experiment workspace runs: %w", err)
+	}
+
+	return runs, nil
+}
+
+// findExperimentWorkspaceEvaluations は実験に属するevaluationの安全な進行状況を取得する。
+func (s *Store) findExperimentWorkspaceEvaluations(ctx context.Context, experimentID string) ([]domain.ExperimentWorkspaceEvaluation, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT id, state, summary, updated_at FROM experiment_evaluations WHERE experiment_id = ? ORDER BY created_at ASC, id ASC", experimentID)
+	if err != nil {
+		return nil, fmt.Errorf("query experiment workspace evaluations: %w", err)
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	evaluations := make([]domain.ExperimentWorkspaceEvaluation, 0)
+	for rows.Next() {
+		var evaluation domain.ExperimentWorkspaceEvaluation
+		var summary sql.NullString
+		var updatedAt string
+		if err := rows.Scan(&evaluation.ID, &evaluation.State, &summary, &updatedAt); err != nil {
+			return nil, fmt.Errorf("scan experiment workspace evaluation: %w", err)
+		}
+		if summary.Valid {
+			evaluation.Summary = &summary.String
+		}
+		evaluation.UpdatedAt, err = time.Parse(time.RFC3339Nano, updatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse experiment workspace evaluation update time: %w", err)
+		}
+		evaluations = append(evaluations, evaluation)
+	}
+	// 単体テスト到達不可: SQLiteの完全に読み切ったRowsではrows.Errがnilとなり、Storeは固定のsqliteドライバを使用するため反復時エラーを注入できない。
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate experiment workspace evaluations: %w", err)
+	}
+
+	return evaluations, nil
 }
 
 // findExperimentBriefingSession は開始済み実験ブリーフセッションを取得。

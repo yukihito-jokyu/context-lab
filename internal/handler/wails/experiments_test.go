@@ -545,6 +545,113 @@ func TestExperimentPreparationsHandlerGetExperimentPreparation(t *testing.T) {
 	}
 }
 
+// Wails実験ワークスペースqueryの成功と安全な失敗返却。
+func TestExperimentWorkspacesHandlerGetExperimentWorkspace(t *testing.T) {
+	fixedAt := time.Date(2026, time.August, 10, 1, 2, 3, 0, time.FixedZone("JST", 9*60*60))
+	tests := []struct {
+		name     string
+		reader   handlerExperimentWorkspaceReader
+		wantCode apperr.Code
+		wantData bool
+	}{
+		{
+			name: "固定条件と空の進行状況を画面DTOへ変換する",
+			reader: handlerExperimentWorkspaceReader{
+				found: true,
+				workspace: domain.ExperimentWorkspace{
+					ExperimentID: "experiment-1",
+					State:        "ready",
+					FixedConditions: domain.ExperimentFixedConditions{
+						FixedConditionID:      "fixed-1",
+						Purpose:               "目的",
+						EnvironmentConditions: "隔離環境",
+						InitialInput:          "初期入力",
+						Prompts: []domain.ExperimentPreparationPrompt{
+							{
+								SequenceNo: 1,
+								Content:    "prompt A",
+							},
+						},
+						EvaluationAxes: "正確性",
+						FixedAt:        fixedAt,
+					},
+					ConditionFixOperationID: "operation-1",
+					ConditionFixOperationAt: fixedAt,
+					LastConfirmedAt:         fixedAt,
+					Runs: []domain.ExperimentWorkspaceRun{{
+						ID:        "run-1",
+						State:     "completed",
+						Summary:   experimentWorkspaceStringPointer("run要約"),
+						UpdatedAt: fixedAt,
+					}},
+					Evaluations: []domain.ExperimentWorkspaceEvaluation{{
+						ID:        "evaluation-1",
+						State:     "completed",
+						Summary:   experimentWorkspaceStringPointer("evaluation要約"),
+						UpdatedAt: fixedAt,
+					}},
+				},
+			},
+			wantData: true,
+		},
+		{
+			name: "内部エラーを安全なコードへ変換する",
+			reader: handlerExperimentWorkspaceReader{
+				err: errors.New("SELECT private_operation_id"),
+			},
+			wantCode: apperr.CodeExperimentWorkspaceUnavailable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NewExperimentWorkspacesHandler(usecase.NewGetExperimentWorkspace(tt.reader), newTestLogger()).GetExperimentWorkspace("experiment-1")
+			if gotData := got.Data != nil; gotData != tt.wantData {
+				t.Fatalf("Data available = %v, want %v", gotData, tt.wantData)
+			}
+			if !tt.wantData {
+				if got.Error == nil {
+					t.Fatal("Error = nil, want safe error")
+				}
+				if got.Error.Code != string(tt.wantCode) {
+					t.Errorf("Error.Code = %q, want %q", got.Error.Code, tt.wantCode)
+				}
+				if strings.Contains(got.Error.Message, "private_operation_id") {
+					t.Errorf("Error.Message = %q, want no private detail", got.Error.Message)
+				}
+
+				return
+			}
+			if got.Error != nil {
+				t.Fatalf("Error = %+v, want nil", got.Error)
+			}
+			if got.Data.FixedConditions.FixedConditionID != "fixed-1" || got.Data.ConditionFixOperation.OperationID != "operation-1" {
+				t.Errorf("workspace identifiers = %+v, want fixed operation IDs", got.Data)
+			}
+			if len(got.Data.Runs) != 1 || got.Data.Runs[0].ID != "run-1" || got.Data.Runs[0].State != "completed" {
+				t.Errorf("Runs = %+v, want persisted run DTO", got.Data.Runs)
+			}
+			if len(got.Data.Evaluations) != 1 || got.Data.Evaluations[0].ID != "evaluation-1" || got.Data.Evaluations[0].State != "completed" {
+				t.Errorf("Evaluations = %+v, want persisted evaluation DTO", got.Data.Evaluations)
+			}
+			if got.Data.FixedConditions.FixedAt.Location() != time.UTC {
+				t.Errorf("FixedAt location = %s, want UTC", got.Data.FixedConditions.FixedAt.Location())
+			}
+		})
+	}
+}
+
+// 実験ワークスペース失敗の安全な変換。
+func TestFailGetExperimentWorkspace(t *testing.T) {
+	got := failGetExperimentWorkspace(errors.New("private database detail"))
+	if got.Error == nil {
+		t.Fatal("Error = nil, want safe error")
+	}
+	if got.Error.Code != string(apperr.CodeUnexpected) {
+		t.Errorf("Error.Code = %q, want %q", got.Error.Code, apperr.CodeUnexpected)
+	}
+}
+
 // Wails下書き保存の成功と安全な失敗返却。
 func TestExperimentPreparationsHandlerSaveExperimentPreparationDraft(t *testing.T) {
 	tests := []struct {
@@ -819,6 +926,23 @@ type handlerExperimentPreparationReader struct {
 	preparation domain.ExperimentPreparation
 	found       bool
 	err         error
+}
+
+// handlerExperimentWorkspaceReader はhandler用実験ワークスペースqueryのtest double。
+type handlerExperimentWorkspaceReader struct {
+	workspace domain.ExperimentWorkspace
+	found     bool
+	err       error
+}
+
+// experimentWorkspaceStringPointer はテスト用の任意文字列を生成する。
+func experimentWorkspaceStringPointer(value string) *string {
+	return &value
+}
+
+// GetExperimentWorkspace は指定済み実験ワークスペースを返却。
+func (r handlerExperimentWorkspaceReader) GetExperimentWorkspace(context.Context, string) (domain.ExperimentWorkspace, bool, error) {
+	return r.workspace, r.found, r.err
 }
 
 // GetExperimentPreparation は指定済み実験準備を返却。

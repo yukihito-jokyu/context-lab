@@ -130,6 +130,34 @@ type ExperimentFixedConditions struct {
 	FixedAt               time.Time
 }
 
+// ExperimentWorkspace は実験開始後の画面表示に必要な不変条件と進行状況。
+type ExperimentWorkspace struct {
+	ExperimentID            string
+	State                   string
+	FixedConditions         ExperimentFixedConditions
+	ConditionFixOperationID string
+	ConditionFixOperationAt time.Time
+	LastConfirmedAt         time.Time
+	Runs                    []ExperimentWorkspaceRun
+	Evaluations             []ExperimentWorkspaceEvaluation
+}
+
+// ExperimentWorkspaceRun は実験ワークスペースに表示するrunの安全な進行状況。
+type ExperimentWorkspaceRun struct {
+	ID        string
+	State     string
+	Summary   *string
+	UpdatedAt time.Time
+}
+
+// ExperimentWorkspaceEvaluation は実験ワークスペースに表示するevaluationの安全な進行状況。
+type ExperimentWorkspaceEvaluation struct {
+	ID        string
+	State     string
+	Summary   *string
+	UpdatedAt time.Time
+}
+
 // Valid は固定できる必須条件が揃っているかを返す。
 func (c ExperimentFixedConditions) Valid() bool {
 	if strings.TrimSpace(c.Purpose) == "" || strings.TrimSpace(c.EnvironmentConditions) == "" || strings.TrimSpace(c.InitialInput) == "" || strings.TrimSpace(c.EvaluationAxes) == "" || len(c.Prompts) == 0 {

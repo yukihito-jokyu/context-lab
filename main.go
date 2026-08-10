@@ -52,6 +52,7 @@ func main() {
 		usecase.NewSaveExperimentPreparationDraft(store),
 		usecase.NewFixExperimentConditions(store),
 	)
+	experimentWorkspacesHandler := wailshandler.NewExperimentWorkspacesHandler(usecase.NewGetExperimentWorkspace(store), appLogger)
 	preparationsHandler := wailshandler.NewPreparationsHandler(usecase.NewListPreparations(store), appLogger)
 	briefingAdapter := acp.NewCodexBriefingAdapter(filepath.Join(configDirectory, applicationDirectoryName))
 	experimentBriefingsHandler := wailshandler.NewExperimentBriefingsHandler(
@@ -69,7 +70,7 @@ func main() {
 		Height:      800,
 		AssetServer: &assetserver.Options{Assets: assets},
 		OnStartup:   app.startup,
-		Bind:        []interface{}{experimentsHandler, experimentPreparationsHandler, preparationsHandler, experimentBriefingsHandler},
+		Bind:        []interface{}{experimentsHandler, experimentPreparationsHandler, experimentWorkspacesHandler, preparationsHandler, experimentBriefingsHandler},
 	})
 	if err != nil {
 		appLogger.Error(context.Background(), "run application", err)

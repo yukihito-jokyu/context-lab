@@ -9,6 +9,7 @@ type StopExperimentBriefingResponse = Record<string, unknown>;
 type GetExperimentPreparationResponse = Record<string, unknown>;
 type SaveExperimentPreparationDraftResponse = Record<string, unknown>;
 type FixExperimentConditionsResponse = Record<string, unknown>;
+type GetExperimentWorkspaceResponse = Record<string, unknown>;
 type ListPreparationsResponse = Record<string, unknown>;
 
 declare global {
@@ -159,6 +160,26 @@ async function installExperimentPreparationMock(
               window.setTimeout(() => resolve(response.result), response.delayMs);
             });
           }
+          return Promise.resolve(response);
+        }
+      };
+    `,
+  });
+}
+
+async function installExperimentWorkspaceMock(
+  page: Page,
+  responses: GetExperimentWorkspaceResponse[],
+) {
+  await page.addInitScript({
+    content: `
+      const workspaceResponses = ${JSON.stringify(responses)};
+      let workspaceCallCount = 0;
+      window.go = window.go || { wails: {} };
+      window.go.wails.ExperimentWorkspacesHandler = {
+        GetExperimentWorkspace: () => {
+          const response = workspaceResponses[Math.min(workspaceCallCount, workspaceResponses.length - 1)];
+          workspaceCallCount += 1;
           return Promise.resolve(response);
         }
       };
@@ -945,6 +966,27 @@ test("実験準備の保存失敗では入力を保持し、再試行は別reque
 test("実験準備の条件固定は成功後にワークスペースへ遷移する", async ({
   page,
 }) => {
+  await installExperimentWorkspaceMock(page, [
+    {
+      data: {
+        experimentId: "EXP-015",
+        state: "ready",
+        fixedConditions: {
+          fixedConditionId: "fixed-1",
+          purpose: "問い合わせ要約の品質を比較する",
+          environmentConditions: "同じ入力と評価手順を用いる",
+          initialInput: "顧客問い合わせ本文",
+          prompts: [{ sequenceNo: 1, content: "短く要約する" }],
+          evaluationAxes: "正確性、要点保持",
+          fixedAt: confirmedAt,
+        },
+        conditionFixOperation: { operationId: "operation-1" },
+        runs: [],
+        evaluations: [],
+        lastConfirmedAt: confirmedAt,
+      },
+    },
+  ]);
   await installExperimentPreparationMock(
     page,
     [
@@ -991,9 +1033,99 @@ test("実験準備の条件固定は成功後にワークスペースへ遷移�
   await expect(
     page.getByRole("heading", { name: "実験ワークスペース" }),
   ).toBeVisible();
-  await expect(page.locator("#experiment-workspace-ready")).toContainText(
-    "操作ID: operation-1",
+  await expect(page.locator("#experiment-workspace-operation")).toContainText(
+    "条件固定操作ID: operation-1",
   );
+  await expect(
+    page.locator("#experiment-workspace-fixed-conditions"),
+  ).toContainText("問い合わせ要約の品質を比較する");
+});
+
+test("実験ワークスペースは固定条件と正本のrun・evaluationを表示する", async ({
+  page,
+}) => {
+  await installExperimentWorkspaceMock(page, [
+    {
+      data: {
+        experimentId: "EXP-016",
+        state: "evaluating",
+        fixedConditions: {
+          fixedConditionId: "fixed-2",
+          purpose: "回答の正確性を比較する",
+          hypothesis: "根拠を指定すると正確性が上がる",
+          environmentConditions: "同一のローカル環境を使用する",
+          initialInput: "問い合わせ本文",
+          prompts: [{ sequenceNo: 1, content: "根拠を添えて回答する" }],
+          evaluationAxes: "正確性",
+          fixedAt: confirmedAt,
+        },
+        conditionFixOperation: { operationId: "operation-2" },
+        runs: [
+          {
+            id: "run-2",
+            state: "completed",
+            summary: "2件のpromptを実行しました。",
+            updatedAt: confirmedAt,
+          },
+        ],
+        evaluations: [
+          {
+            id: "evaluation-1",
+            state: "running",
+            summary: "正確性を評価中です。",
+            updatedAt: confirmedAt,
+          },
+        ],
+        lastConfirmedAt: confirmedAt,
+      },
+    },
+  ]);
+  await page.goto("/experiments/EXP-016/workspace");
+
+  await expect(page.getByText("回答の正確性を比較する")).toBeVisible();
+  await expect(page.getByText("run-2")).toBeVisible();
+  await expect(page.getByText("completed")).toBeVisible();
+  await expect(page.getByText("2件のpromptを実行しました。")).toBeVisible();
+  await expect(page.getByText("evaluation-1")).toBeVisible();
+  await expect(page.getByText("running")).toBeVisible();
+  await expect(page.getByText("正確性を評価中です。")).toBeVisible();
+});
+
+test("実験ワークスペースは取得失敗後に再読込できる", async ({ page }) => {
+  await installExperimentWorkspaceMock(page, [
+    {
+      error: {
+        code: "EXPERIMENT_WORKSPACE_UNAVAILABLE",
+        message: "取得に失敗しました。",
+      },
+    },
+    {
+      data: {
+        experimentId: "EXP-017",
+        state: "ready",
+        fixedConditions: {
+          fixedConditionId: "fixed-3",
+          purpose: "再読込後の固定条件",
+          environmentConditions: "同一環境",
+          initialInput: "入力",
+          prompts: [{ sequenceNo: 1, content: "prompt" }],
+          evaluationAxes: "正確性",
+          fixedAt: confirmedAt,
+        },
+        conditionFixOperation: { operationId: "operation-3" },
+        runs: [],
+        evaluations: [],
+        lastConfirmedAt: confirmedAt,
+      },
+    },
+  ]);
+  await page.goto("/experiments/EXP-017/workspace");
+
+  await expect(page.locator("#experiment-workspace-error")).toContainText(
+    "取得に失敗しました。",
+  );
+  await page.locator("#reload-experiment-workspace-button").click();
+  await expect(page.getByText("再読込後の固定条件")).toBeVisible();
 });
 
 test("実験準備の条件固定中はフォームと下書き保存を無効化する", async ({

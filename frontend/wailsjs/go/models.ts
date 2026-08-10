@@ -93,6 +93,39 @@ export namespace wails {
 	        this.openQuestion = source["openQuestion"];
 	    }
 	}
+	export class ExperimentConditionFixOperationData {
+	    operationId: string;
+	    // Go type: time
+	    fixedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new ExperimentConditionFixOperationData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.operationId = source["operationId"];
+	        this.fixedAt = this.convertValues(source["fixedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class ExperimentMessageResponse {
 	    role: string;
 	    content: string;
@@ -198,6 +231,125 @@ export namespace wails {
 	        this.state = source["state"];
 	        this.progressSummary = source["progressSummary"];
 	        this.derivedFromExperimentId = source["derivedFromExperimentId"];
+	        this.updatedAt = this.convertValues(source["updatedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ExperimentWorkspaceEvaluationData {
+	    id: string;
+	    state: string;
+	    summary?: string;
+	    // Go type: time
+	    updatedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new ExperimentWorkspaceEvaluationData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.state = source["state"];
+	        this.summary = source["summary"];
+	        this.updatedAt = this.convertValues(source["updatedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ExperimentWorkspaceFixedConditionsData {
+	    fixedConditionId: string;
+	    purpose: string;
+	    hypothesis?: string;
+	    environmentConditions: string;
+	    initialInput: string;
+	    prompts: ExperimentPreparationPromptResponse[];
+	    evaluationAxes: string;
+	    // Go type: time
+	    fixedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new ExperimentWorkspaceFixedConditionsData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.fixedConditionId = source["fixedConditionId"];
+	        this.purpose = source["purpose"];
+	        this.hypothesis = source["hypothesis"];
+	        this.environmentConditions = source["environmentConditions"];
+	        this.initialInput = source["initialInput"];
+	        this.prompts = this.convertValues(source["prompts"], ExperimentPreparationPromptResponse);
+	        this.evaluationAxes = source["evaluationAxes"];
+	        this.fixedAt = this.convertValues(source["fixedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ExperimentWorkspaceRunData {
+	    id: string;
+	    state: string;
+	    summary?: string;
+	    // Go type: time
+	    updatedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new ExperimentWorkspaceRunData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.state = source["state"];
+	        this.summary = source["summary"];
 	        this.updatedAt = this.convertValues(source["updatedAt"], null);
 	    }
 	
@@ -463,6 +615,81 @@ export namespace wails {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.data = this.convertValues(source["data"], GetExperimentPreparationData);
+	        this.error = this.convertValues(source["error"], ErrorResponse);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class GetExperimentWorkspaceData {
+	    experimentId: string;
+	    state: string;
+	    fixedConditions: ExperimentWorkspaceFixedConditionsData;
+	    conditionFixOperation: ExperimentConditionFixOperationData;
+	    runs: ExperimentWorkspaceRunData[];
+	    evaluations: ExperimentWorkspaceEvaluationData[];
+	    // Go type: time
+	    lastConfirmedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new GetExperimentWorkspaceData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.experimentId = source["experimentId"];
+	        this.state = source["state"];
+	        this.fixedConditions = this.convertValues(source["fixedConditions"], ExperimentWorkspaceFixedConditionsData);
+	        this.conditionFixOperation = this.convertValues(source["conditionFixOperation"], ExperimentConditionFixOperationData);
+	        this.runs = this.convertValues(source["runs"], ExperimentWorkspaceRunData);
+	        this.evaluations = this.convertValues(source["evaluations"], ExperimentWorkspaceEvaluationData);
+	        this.lastConfirmedAt = this.convertValues(source["lastConfirmedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class GetExperimentWorkspaceResponse {
+	    data?: GetExperimentWorkspaceData;
+	    error?: ErrorResponse;
+	
+	    static createFrom(source: any = {}) {
+	        return new GetExperimentWorkspaceResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.data = this.convertValues(source["data"], GetExperimentWorkspaceData);
 	        this.error = this.convertValues(source["error"], ErrorResponse);
 	    }
 	

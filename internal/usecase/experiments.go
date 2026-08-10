@@ -194,6 +194,41 @@ type ExperimentPreparationReader interface {
 	GetExperimentPreparation(context.Context, string) (domain.ExperimentPreparation, bool, error)
 }
 
+// ExperimentWorkspaceReader は実験ワークスペースを読み出すport。
+type ExperimentWorkspaceReader interface {
+	GetExperimentWorkspace(context.Context, string) (domain.ExperimentWorkspace, bool, error)
+}
+
+// GetExperimentWorkspace は実験ワークスペースの再読込query。
+type GetExperimentWorkspace struct {
+	reader ExperimentWorkspaceReader
+}
+
+// NewGetExperimentWorkspace は実験ワークスペース再読込queryを生成。
+func NewGetExperimentWorkspace(reader ExperimentWorkspaceReader) *GetExperimentWorkspace {
+	return &GetExperimentWorkspace{reader: reader}
+}
+
+// Execute は固定済み実験のワークスペースを取得。
+func (u *GetExperimentWorkspace) Execute(ctx context.Context, experimentID string) (domain.ExperimentWorkspace, error) {
+	if strings.TrimSpace(experimentID) == "" {
+		return domain.ExperimentWorkspace{}, apperr.New(apperr.CodeExperimentWorkspaceRequestInvalid)
+	}
+
+	workspace, found, err := u.reader.GetExperimentWorkspace(ctx, strings.TrimSpace(experimentID))
+	if err != nil {
+		if appErr := apperr.FromContextError(err); appErr != nil {
+			return domain.ExperimentWorkspace{}, appErr
+		}
+
+		return domain.ExperimentWorkspace{}, apperr.Wrap(apperr.CodeExperimentWorkspaceUnavailable, err)
+	}
+	if !found {
+		return domain.ExperimentWorkspace{}, apperr.New(apperr.CodeExperimentWorkspaceNotFound)
+	}
+	return workspace, nil
+}
+
 // GetExperimentPreparation は実験準備画面の再読込query。
 type GetExperimentPreparation struct {
 	reader ExperimentPreparationReader

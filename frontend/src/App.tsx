@@ -7,6 +7,7 @@ import { createExperimentFromBrief } from "@/features/experiments/services/creat
 import { fixExperimentConditions } from "@/features/experiments/services/fix-experiment-conditions-service";
 import { getExperimentBriefing } from "@/features/experiments/services/get-experiment-briefing-service";
 import { getExperimentPreparation } from "@/features/experiments/services/get-experiment-preparation-service";
+import { getExperimentWorkspace } from "@/features/experiments/services/get-experiment-workspace-service";
 import { listExperiments } from "@/features/experiments/services/list-experiments-service";
 import { saveExperimentPreparationDraft } from "@/features/experiments/services/save-experiment-preparation-draft-service";
 import { sendExperimentBriefMessage } from "@/features/experiments/services/send-experiment-brief-message-service";
@@ -39,10 +40,7 @@ export default function App() {
     return (
       <ExperimentWorkspacePage
         experimentId={decodeExperimentID(workspaceMatch[1])}
-        operationId={
-          new URLSearchParams(window.location.search).get("operationId") ??
-          undefined
-        }
+        getExperimentWorkspace={getExperimentWorkspace}
       />
     );
   }
