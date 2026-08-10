@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	apperr "github.com/yukihito-jokyu/context-lab/internal/errors"
+	"github.com/yukihito-jokyu/context-lab/internal/usecase"
 )
 
 // SQLite環境準備session一覧の種別分離と時刻順。
@@ -221,6 +224,84 @@ func TestStoreGetPreparation(t *testing.T) {
 	}
 	if found {
 		t.Error("other kind found = true, want false")
+	}
+}
+
+// SQLite候補採用readerの種別・完了・候補存在判定。
+func TestStoreCandidateAdoptionReader(t *testing.T) {
+	tests := []struct {
+		name       string
+		kind       string
+		state      string
+		candidate  bool
+		wantCode   apperr.Code
+		wantResult bool
+	}{
+		{
+			name:       "完了済み候補を返す",
+			kind:       environmentPreparationKind,
+			state:      "completed",
+			candidate:  true,
+			wantResult: true,
+		},
+		{
+			name:      "異なる種別を準備なしとして扱う",
+			kind:      "experiment_brief",
+			state:     "completed",
+			candidate: true,
+			wantCode:  apperr.CodePreparationNotFound,
+		},
+		{
+			name:      "未完了準備を拒否する",
+			kind:      environmentPreparationKind,
+			state:     "running",
+			candidate: true,
+			wantCode:  apperr.CodePreparationCandidateNotReady,
+		},
+		{
+			name:     "候補がなければ拒否する",
+			kind:     environmentPreparationKind,
+			state:    "completed",
+			wantCode: apperr.CodePreparationCandidateNotFound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store, err := Open(t.TempDir())
+			if err != nil {
+				t.Fatalf("Open() error = %v", err)
+			}
+			t.Cleanup(func() {
+				if err := store.Close(); err != nil {
+					t.Errorf("Close() error = %v", err)
+				}
+			})
+			now := time.Date(2026, time.August, 11, 1, 2, 3, 0, time.UTC)
+			if _, err := store.db.Exec("INSERT INTO preparation_sessions (id, kind, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", "preparation-1", tt.kind, tt.state, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano)); err != nil {
+				t.Fatalf("seed preparation error = %v", err)
+			}
+			if tt.candidate {
+				if _, err := store.db.Exec("INSERT INTO environment_preparation_candidates (id, preparation_session_id, environment_conditions, safe_summary, created_at) VALUES (?, ?, ?, ?, ?)", "candidate-1", "preparation-1", "macOS 15", "利用可能", now.Format(time.RFC3339Nano)); err != nil {
+					t.Fatalf("seed candidate error = %v", err)
+				}
+			}
+
+			got, err := usecase.NewAdoptCandidate(store).Execute(context.Background(), "request-1", "preparation-1", "candidate-1")
+			if tt.wantCode != "" {
+				if !apperr.IsCode(err, tt.wantCode) {
+					t.Errorf("Execute() error = %v, want code %q", err, tt.wantCode)
+				}
+
+				return
+			}
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if gotResult := got.EnvironmentConditions == "macOS 15"; gotResult != tt.wantResult {
+				t.Errorf("EnvironmentConditions found = %v, want %v", gotResult, tt.wantResult)
+			}
+		})
 	}
 }
 

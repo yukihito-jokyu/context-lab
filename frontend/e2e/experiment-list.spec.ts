@@ -65,6 +65,11 @@ type StartPreparationResponse = Record<string, unknown> & {
   result?: Record<string, unknown>;
   throwMessage?: string;
 };
+type AdoptCandidateResponse = Record<string, unknown> & {
+  delayMs?: number;
+  result?: Record<string, unknown>;
+  throwMessage?: string;
+};
 
 declare global {
   interface Window {
@@ -137,6 +142,11 @@ declare global {
     __startPreparationRequests: Array<{
       requestId: string;
       scope: string;
+    }>;
+    __adoptCandidateRequests: Array<{
+      requestId: string;
+      preparationId: string;
+      candidateId: string;
     }>;
   }
 }
@@ -664,6 +674,33 @@ async function installStartPreparationMock(
         );
         const response = responses[Math.min(callCount, responses.length - 1)];
         callCount += 1;
+        if (response.delayMs) {
+          return new Promise((resolve) => {
+            window.setTimeout(() => resolve(response.result), response.delayMs);
+          });
+        }
+        return Promise.resolve(response);
+      };
+    `,
+  });
+}
+
+async function installAdoptCandidateMock(
+  page: Page,
+  responses: AdoptCandidateResponse[],
+) {
+  await page.addInitScript({
+    content: `
+      const responses = ${JSON.stringify(responses)};
+      let callCount = 0;
+      window.__adoptCandidateRequests = [];
+      window.go = window.go || { wails: {} };
+      window.go.wails.PreparationsHandler = window.go.wails.PreparationsHandler || {};
+      window.go.wails.PreparationsHandler.AdoptCandidate = (requestId, preparationId, candidateId) => {
+        window.__adoptCandidateRequests.push({ requestId, preparationId, candidateId });
+        const response = responses[Math.min(callCount, responses.length - 1)];
+        callCount += 1;
+        if (response.throwMessage) return Promise.reject(new Error(response.throwMessage));
         if (response.delayMs) {
           return new Promise((resolve) => {
             window.setTimeout(() => resolve(response.result), response.delayMs);
@@ -3308,6 +3345,163 @@ test("環境準備sessionを選択して詳細を表示する", async ({ page })
   ).toBeVisible();
   await expect(page.getByText("隔離環境で実行可能です。")).toBeVisible();
   await expect(page.getByText("DEPENDENCY_NOTICE")).toBeVisible();
+});
+
+test("完了済みの環境候補を確認して新規実験へ引き継ぐ", async ({ page }) => {
+  await installGetPreparationMock(page, [
+    {
+      data: {
+        preparationId: "PREP-ADOPT-001",
+        state: "completed",
+        startedAt: confirmedAt,
+        lastObservedAt: confirmedAt,
+        candidates: [
+          {
+            id: "CAND-ADOPT-001",
+            environmentConditions: "Node.js 20 / Linux",
+            summary: "隔離環境で実行可能です。",
+            createdAt: confirmedAt,
+          },
+        ],
+        diagnostics: [],
+        reconciliation: { state: "confirmed", lastObservedAt: confirmedAt },
+      },
+    },
+  ]);
+  await installAdoptCandidateMock(page, [
+    {
+      delayMs: 200,
+      result: {
+        data: {
+          preparationId: "PREP-ADOPT-001",
+          candidateId: "CAND-ADOPT-001",
+          environmentConditions: "Node.js 20 / Linux",
+        },
+      },
+    },
+  ]);
+  await installListExperimentsMock(page, [emptyResponse]);
+  await page.goto("/preparations/PREP-ADOPT-001");
+
+  await page.locator("#adopt-candidate-button-CAND-ADOPT-001").click();
+  await expect(page.locator("#adopt-candidate-dialog")).toBeVisible();
+  await page.getByRole("button", { name: "採用して新規実験へ" }).click();
+  await expect(page.locator("#adopt-candidate-pending")).toBeVisible();
+  await expect(page.getByRole("button", { name: "採用中…" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "戻る" })).toBeDisabled();
+  await expect(page).toHaveURL("/");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.sessionStorage.getItem("adoptedEnvironmentConditions"),
+      ),
+    )
+    .toBe("Node.js 20 / Linux");
+  const requests = await page.evaluate(() => window.__adoptCandidateRequests);
+  expect(requests).toEqual([
+    {
+      requestId: expect.any(String),
+      preparationId: "PREP-ADOPT-001",
+      candidateId: "CAND-ADOPT-001",
+    },
+  ]);
+});
+
+test("環境候補の採用失敗後は同じrequest IDで再試行できる", async ({ page }) => {
+  await installGetPreparationMock(page, [
+    {
+      data: {
+        preparationId: "PREP-ADOPT-002",
+        state: "completed",
+        startedAt: confirmedAt,
+        lastObservedAt: confirmedAt,
+        candidates: [
+          {
+            id: "CAND-ADOPT-002",
+            environmentConditions: "Node.js 20 / Linux",
+            summary: "隔離環境で実行可能です。",
+            createdAt: confirmedAt,
+          },
+        ],
+        diagnostics: [],
+        reconciliation: { state: "confirmed", lastObservedAt: confirmedAt },
+      },
+    },
+  ]);
+  await installAdoptCandidateMock(page, [
+    {
+      error: {
+        code: "CANDIDATE_ADOPTION_UNAVAILABLE",
+        message: "候補を採用できませんでした。",
+      },
+    },
+    {
+      data: {
+        preparationId: "PREP-ADOPT-002",
+        candidateId: "CAND-ADOPT-002",
+        environmentConditions: "Node.js 20 / Linux",
+      },
+    },
+  ]);
+  await installListExperimentsMock(page, [emptyResponse]);
+  await page.goto("/preparations/PREP-ADOPT-002");
+
+  await page.locator("#adopt-candidate-button-CAND-ADOPT-002").click();
+  await page.getByRole("button", { name: "採用して新規実験へ" }).click();
+  await expect(page.locator("#adopt-candidate-error")).toBeVisible();
+  await page.getByRole("button", { name: "採用して新規実験へ" }).click();
+  await expect(page).toHaveURL("/");
+  const requests = await page.evaluate(() => window.__adoptCandidateRequests);
+  expect(requests).toHaveLength(2);
+  expect(requests[0].requestId).toBe(requests[1].requestId);
+});
+
+test("採用した環境条件を新規実験の準備フォームへ一度だけ引き継ぐ", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem(
+      "adoptedEnvironmentConditions",
+      "Node.js 20 / Linux",
+    );
+  });
+  await installExperimentPreparationMock(page, [
+    {
+      data: {
+        experimentId: "EXP-ADOPT-001",
+        state: "preparing",
+        purpose: "候補の環境を確認する",
+        environmentConditions: "ブリーフからの環境条件",
+        initialInput: "入力",
+        prompts: [
+          { sequenceNo: 1, content: "prompt 1" },
+          { sequenceNo: 2, content: "prompt 2" },
+        ],
+        evaluationAxes: "正確性",
+        source: { state: "adopted", versionId: "brief-v1" },
+        requiredFields: {
+          purpose: true,
+          environmentConditions: true,
+          initialInput: true,
+          prompts: true,
+          evaluationAxes: true,
+        },
+        lastConfirmedAt: confirmedAt,
+      },
+    },
+  ]);
+  await page.goto("/experiments/EXP-ADOPT-001/preparation");
+
+  await expect(page.locator("#preparation-environment")).toHaveValue(
+    "Node.js 20 / Linux",
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.sessionStorage.getItem("adoptedEnvironmentConditions"),
+      ),
+    )
+    .toBeNull();
 });
 
 test("環境準備session詳細のloading、候補なし、照合中、失敗を表示する", async ({

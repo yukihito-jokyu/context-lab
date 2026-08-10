@@ -48,6 +48,19 @@ type StartPreparationData struct {
 	State         string `json:"state"`
 }
 
+// AdoptCandidateResponse は環境候補採用commandの成功または失敗結果。
+type AdoptCandidateResponse struct {
+	Data  *AdoptCandidateData `json:"data,omitempty"`
+	Error *ErrorResponse      `json:"error,omitempty"`
+}
+
+// AdoptCandidateData は画面へ返す採用確認済み環境候補。
+type AdoptCandidateData struct {
+	PreparationID         string `json:"preparationId"`
+	CandidateID           string `json:"candidateId"`
+	EnvironmentConditions string `json:"environmentConditions"`
+}
+
 // GetPreparationData は画面へ返す環境準備session詳細。
 type GetPreparationData struct {
 	PreparationID  string                            `json:"preparationId"`
@@ -93,6 +106,7 @@ type PreparationsHandler struct {
 	listPreparations *usecase.ListPreparations
 	getPreparation   *usecase.GetPreparation
 	startPreparation *usecase.StartPreparation
+	adoptCandidate   *usecase.AdoptCandidate
 	logger           logger.Logger
 }
 
@@ -104,6 +118,11 @@ func NewPreparationsHandler(listPreparations *usecase.ListPreparations, getPrepa
 // NewPreparationsHandlerWithStart は環境準備commandを含むWails bindingを生成する。
 func NewPreparationsHandlerWithStart(listPreparations *usecase.ListPreparations, getPreparation *usecase.GetPreparation, startPreparation *usecase.StartPreparation, appLogger logger.Logger) *PreparationsHandler {
 	return &PreparationsHandler{listPreparations: listPreparations, getPreparation: getPreparation, startPreparation: startPreparation, logger: appLogger}
+}
+
+// NewPreparationsHandlerWithStartAndAdopt は開始・候補採用commandを含むWails bindingを生成。
+func NewPreparationsHandlerWithStartAndAdopt(listPreparations *usecase.ListPreparations, getPreparation *usecase.GetPreparation, startPreparation *usecase.StartPreparation, adoptCandidate *usecase.AdoptCandidate, appLogger logger.Logger) *PreparationsHandler {
+	return &PreparationsHandler{listPreparations: listPreparations, getPreparation: getPreparation, startPreparation: startPreparation, adoptCandidate: adoptCandidate, logger: appLogger}
 }
 
 // ListPreparations は環境準備session一覧を画面向けDTOで返す。
@@ -157,6 +176,22 @@ func (h *PreparationsHandler) StartPreparation(requestID string, scope string) S
 	return StartPreparationResponse{Data: &StartPreparationData{PreparationID: start.PreparationID, State: start.State}}
 }
 
+// AdoptCandidate は完了済み環境準備の候補を画面向けDTOで返す。
+func (h *PreparationsHandler) AdoptCandidate(requestID string, preparationID string, candidateID string) AdoptCandidateResponse {
+	ctx := context.Background()
+	h.logger.Info(ctx, "adopt candidate called")
+	if h.adoptCandidate == nil {
+		return h.failAdoptCandidate(ctx, apperr.New(apperr.CodeCandidateAdoptionUnavailable))
+	}
+
+	candidate, err := h.adoptCandidate.Execute(ctx, requestID, preparationID, candidateID)
+	if err != nil {
+		return h.failAdoptCandidate(ctx, err)
+	}
+
+	return AdoptCandidateResponse{Data: &AdoptCandidateData{PreparationID: candidate.PreparationID, CandidateID: candidate.CandidateID, EnvironmentConditions: candidate.EnvironmentConditions}}
+}
+
 // failListPreparations は内部エラーを安全な画面エラーへ変換。
 func failListPreparations(err error) ListPreparationsResponse {
 	appErr := apperr.As(err)
@@ -185,6 +220,18 @@ func (h *PreparationsHandler) failStartPreparation(ctx context.Context, err erro
 	}
 	response := StartPreparationResponse{Error: &ErrorResponse{Code: string(appErr.Code), Message: appErr.Error()}}
 	h.logger.ErrorCode(ctx, "start preparation failed", response.Error.Code, slog.String("operation", "start_preparation"))
+
+	return response
+}
+
+// failAdoptCandidate は候補採用エラーを安全な画面DTOへ変換して記録する。
+func (h *PreparationsHandler) failAdoptCandidate(ctx context.Context, err error) AdoptCandidateResponse {
+	appErr := apperr.As(err)
+	if appErr == nil {
+		appErr = apperr.NewUnexpected(err)
+	}
+	response := AdoptCandidateResponse{Error: &ErrorResponse{Code: string(appErr.Code), Message: appErr.Error()}}
+	h.logger.ErrorCode(ctx, "adopt candidate failed", response.Error.Code, slog.String("operation", "adopt_candidate"))
 
 	return response
 }

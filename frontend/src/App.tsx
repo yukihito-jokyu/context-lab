@@ -1,5 +1,6 @@
 import { EnvironmentPreparationDetailPage } from "@/features/environment-preparation/EnvironmentPreparationDetailPage";
 import { EnvironmentPreparationListPage } from "@/features/environment-preparation/EnvironmentPreparationListPage";
+import { adoptCandidate } from "@/features/environment-preparation/services/adopt-candidate-service";
 import { getPreparation } from "@/features/environment-preparation/services/get-preparation-service";
 import { listPreparations } from "@/features/environment-preparation/services/list-preparations-service";
 import { startPreparation } from "@/features/environment-preparation/services/start-preparation-service";
@@ -54,6 +55,7 @@ export default function App() {
   if (preparationDetailMatch) {
     return (
       <EnvironmentPreparationDetailPage
+        adoptCandidate={adoptCandidate}
         getPreparation={getPreparation}
         onBackToList={() => window.location.assign("/preparations")}
         preparationId={decodeExperimentID(preparationDetailMatch[1])}
