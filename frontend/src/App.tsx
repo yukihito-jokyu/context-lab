@@ -7,6 +7,7 @@ import { ExperimentPreparationPage } from "@/features/experiments/ExperimentPrep
 import { ExperimentWorkspacePage } from "@/features/experiments/ExperimentWorkspacePage";
 import { RunEvaluationPage } from "@/features/experiments/RunEvaluationPage";
 import { createExperimentFromBrief } from "@/features/experiments/services/create-experiment-from-brief-service";
+import { finalizeExperimentConclusion } from "@/features/experiments/services/finalize-experiment-conclusion-service";
 import { fixExperimentConditions } from "@/features/experiments/services/fix-experiment-conditions-service";
 import { getEvaluationDetail } from "@/features/experiments/services/get-evaluation-detail-service";
 import { getExperimentBriefing } from "@/features/experiments/services/get-experiment-briefing-service";
@@ -83,6 +84,7 @@ export default function App() {
     return (
       <ComparisonPage
         experimentId={decodeExperimentID(comparisonMatch[1])}
+        finalizeExperimentConclusion={finalizeExperimentConclusion}
         getExperimentComparison={getExperimentComparison}
       />
     );

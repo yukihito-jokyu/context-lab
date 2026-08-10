@@ -1,6 +1,12 @@
 import { GetExperimentComparison } from "@wails/go/wails/ExperimentComparisonsHandler";
 export type ExperimentComparison = {
   experiment: { id: string; purpose: string; evaluationAxes: string };
+  conclusion?: {
+    conclusionId: string;
+    conclusion: string;
+    state: string;
+    finalizedAt: string;
+  };
   evaluations: Array<{
     evaluationId: string;
     runId: string;
@@ -29,6 +35,14 @@ export const getExperimentComparison: GetExperimentComparisonService = async (
         purpose: d.experiment.purpose,
         evaluationAxes: d.experiment.evaluationAxes,
       },
+      conclusion: d.conclusion
+        ? {
+            conclusionId: d.conclusion.id,
+            conclusion: d.conclusion.content,
+            state: d.conclusion.state,
+            finalizedAt: String(d.conclusion.finalizedAt),
+          }
+        : undefined,
       evaluations: d.evaluations.map((e) => ({
         evaluationId: e.evaluationId,
         runId: e.runId,
