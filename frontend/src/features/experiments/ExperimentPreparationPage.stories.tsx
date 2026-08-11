@@ -101,6 +101,53 @@ export const LoadError: Story = {
   },
 };
 
+export const BridgeUnavailable: Story = {
+  args: {
+    getExperimentPreparation: async () => ({
+      error: {
+        code: "WAILS_BRIDGE_UNAVAILABLE",
+        message:
+          "アプリとの通信機能を開始できませんでした。アプリを完全に終了してから再起動してください。実験データを消去する必要はありません。",
+      },
+    }),
+    saveExperimentPreparationDraft: fn(async () => ({})),
+    fixExperimentConditions: fn(async () => ({})),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByText(
+        "画面からアプリ本体への通信を開始できていません。",
+        {
+          exact: false,
+        },
+      ),
+    ).toBeVisible();
+  },
+};
+
+export const HandlerUnavailable: Story = {
+  args: {
+    getExperimentPreparation: async () => ({
+      error: {
+        code: "WAILS_HANDLER_UNAVAILABLE",
+        message:
+          "この画面とアプリ本体の通信機能が一致していません。開発中は開発サーバーを完全に停止してから起動し直してください。実験データを消去する必要はありません。",
+      },
+    }),
+    saveExperimentPreparationDraft: fn(async () => ({})),
+    fixExperimentConditions: fn(async () => ({})),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByText("画面とアプリ本体の版が揃っていません。", {
+        exact: false,
+      }),
+    ).toBeVisible();
+  },
+};
+
 export const NotFound: Story = {
   args: {
     getExperimentPreparation: async () => ({

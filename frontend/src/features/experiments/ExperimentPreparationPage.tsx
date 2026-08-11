@@ -69,6 +69,31 @@ function createRequestId() {
   return crypto.randomUUID();
 }
 
+function BridgeRecoveryGuide({ code }: { code: string }) {
+  if (code === "WAILS_BRIDGE_UNAVAILABLE") {
+    return (
+      <p className="text-sm text-muted-foreground">
+        画面からアプリ本体への通信を開始できていません。再読込だけでは回復しないため、アプリを完全に終了してから起動し直してください。
+      </p>
+    );
+  }
+  if (code === "WAILS_HANDLER_UNAVAILABLE") {
+    return (
+      <p className="text-sm text-muted-foreground">
+        画面とアプリ本体の版が揃っていません。開発中は開発サーバーを完全に停止してから起動し直してください。
+      </p>
+    );
+  }
+  if (code === "WAILS_BRIDGE_CALL_FAILED") {
+    return (
+      <p className="text-sm text-muted-foreground">
+        アプリ本体への呼出しが完了しませんでした。アプリを完全に終了してから起動し直してください。
+      </p>
+    );
+  }
+  return null;
+}
+
 function PreparationSupport({ data }: { data: ExperimentPreparation }) {
   const requiredFields = [
     ["実験目的", data.requiredFields.purpose],
@@ -531,6 +556,7 @@ export function ExperimentPreparationPage({
             </AlertTitle>
             <AlertDescription className="space-y-4">
               <p>{error.message}</p>
+              <BridgeRecoveryGuide code={error.code} />
               <p className="text-sm text-muted-foreground">
                 エラーコード:{" "}
                 <span id="preparation-load-error-code">{error.code}</span>
