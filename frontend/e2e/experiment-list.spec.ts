@@ -835,9 +835,9 @@ test("準備中の実験を一覧から再開できる", async ({ page }) => {
 
   await page.locator("#open-experiment-EXP-015").click();
   await expect(page).toHaveURL("/experiments/EXP-015/preparation");
-  await expect(
-    page.getByRole("heading", { name: "実験の条件を準備する" }),
-  ).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "候補prompt 2" })).toHaveValue(
+    "根拠を保って要約する",
+  );
 });
 
 test("取消済みの実験には開く操作を表示しない", async ({ page }) => {
@@ -1321,13 +1321,65 @@ test("Wailsブリッジ例外を安全なエラーとして表示する", async 
   await page.goto("/experiments/EXP-015/preparation");
 
   await expect(page.locator("#preparation-load-error")).toContainText(
-    "アプリとの通信を開始できませんでした。",
+    "アプリ本体との通信が完了しませんでした。",
   );
   await expect(page.locator("#preparation-load-error-code")).toHaveText(
-    "WAILS_BRIDGE_UNAVAILABLE",
+    "WAILS_BRIDGE_CALL_FAILED",
   );
   await expect(page.locator("#preparation-load-error")).not.toContainText(
     "native bridge details",
+  );
+});
+
+test("Wailsブリッジが未注入なら完全再起動を案内する", async ({ page }) => {
+  await page.goto("/experiments/EXP-015/preparation");
+
+  await expect(page.locator("#preparation-load-error-code")).toHaveText(
+    "WAILS_BRIDGE_UNAVAILABLE",
+  );
+  await expect(page.locator("#preparation-load-error")).toContainText(
+    "アプリを完全に終了してから起動し直してください。",
+  );
+  await expect(page.locator("#preparation-load-error")).toContainText(
+    "実験データを消去する必要はありません。",
+  );
+});
+
+test("遅れて注入されたWailsブリッジを待機して実験準備を取得する", async ({
+  page,
+}) => {
+  await page.addInitScript({
+    content: `
+      const response = ${JSON.stringify(completeExperimentPreparationResponse)};
+      window.setTimeout(() => {
+        window.go = window.go || { wails: {} };
+        window.go.wails.ExperimentPreparationsHandler = {
+          GetExperimentPreparation: () => Promise.resolve(response)
+        };
+      }, 100);
+    `,
+  });
+  await page.goto("/experiments/EXP-015/preparation");
+
+  await expect(page.getByRole("textbox", { name: "候補prompt 2" })).toHaveValue(
+    "根拠を保って要約する",
+  );
+  await expect(page.locator("#preparation-load-error")).toHaveCount(0);
+});
+
+test("実験準備handlerが未登録なら開発サーバーの完全再起動を案内する", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.go = { wails: { ExperimentPreparationsHandler: {} } };
+  });
+  await page.goto("/experiments/EXP-015/preparation");
+
+  await expect(page.locator("#preparation-load-error-code")).toHaveText(
+    "WAILS_HANDLER_UNAVAILABLE",
+  );
+  await expect(page.locator("#preparation-load-error")).toContainText(
+    "開発サーバーを完全に停止してから起動し直してください。",
   );
 });
 

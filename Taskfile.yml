@@ -94,5 +94,15 @@ tasks:
   frontend:e2e:
     dir: frontend
     cmds: [npm run test:e2e]
+
+  app:bridge:versions:
+    cmds:
+      - |
+        cli_version="$(wails version | sed -n '1p')"
+        module_version="$(go list -m github.com/wailsapp/wails/v2 | awk '{print $2}')"
+        echo "Wails CLI: ${cli_version}; Go module: ${module_version}"
+        test "${cli_version}" = "${module_version}"
+
   dev:
+    deps: [app:bridge:versions]
     cmds: [wails dev]
