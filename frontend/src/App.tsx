@@ -203,6 +203,13 @@ export default function App() {
       sendExperimentBriefMessage={sendExperimentBriefMessage}
       startExperimentBriefing={startExperimentBriefing}
       stopExperimentBriefing={stopExperimentBriefing}
+      onOpenExperiment={(experimentId, state) => {
+        const destination =
+          state === "preparing"
+            ? `/experiments/${encodeURIComponent(experimentId)}/preparation`
+            : `/experiments/${encodeURIComponent(experimentId)}/workspace`;
+        window.location.assign(destination);
+      }}
     />
   );
 }

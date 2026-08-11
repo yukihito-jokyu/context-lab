@@ -25,6 +25,7 @@ import type {
   GetExperimentPreparationResponse,
   GetExperimentPreparationService,
 } from "./services/get-experiment-preparation-service";
+import { experimentPreparationBridgeUnavailableError } from "./services/get-experiment-preparation-service";
 import type {
   SaveExperimentPreparationDraftInput,
   SaveExperimentPreparationDraftService,
@@ -379,10 +380,7 @@ export function ExperimentPreparationPage({
     try {
       response = await getExperimentPreparation(experimentId);
     } catch {
-      setError({
-        code: "UNKNOWN",
-        message: "実験準備を取得できませんでした。",
-      });
+      setError(experimentPreparationBridgeUnavailableError);
       setIsLoading(false);
       return;
     }
@@ -533,6 +531,10 @@ export function ExperimentPreparationPage({
             </AlertTitle>
             <AlertDescription className="space-y-4">
               <p>{error.message}</p>
+              <p className="text-sm text-muted-foreground">
+                エラーコード:{" "}
+                <span id="preparation-load-error-code">{error.code}</span>
+              </p>
               <Button
                 id="reload-preparation-button"
                 onClick={() => void load()}

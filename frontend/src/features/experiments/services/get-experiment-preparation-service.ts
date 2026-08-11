@@ -42,6 +42,24 @@ export type GetExperimentPreparationService = (
   experimentId: string,
 ) => Promise<GetExperimentPreparationResponse>;
 
-export const getExperimentPreparation: GetExperimentPreparationService = (
+export const experimentPreparationBridgeUnavailableError: {
+  code: string;
+  message: string;
+} = {
+  code: "WAILS_BRIDGE_UNAVAILABLE",
+  message:
+    "アプリとの通信を開始できませんでした。アプリを再起動してから再試行してください。",
+};
+
+export const getExperimentPreparation: GetExperimentPreparationService = async (
   experimentId,
-) => GetExperimentPreparation(experimentId);
+) => {
+  try {
+    return await GetExperimentPreparation(experimentId);
+  } catch {
+    // Wails bridgeの初期化失敗など、handlerに到達しない例外は内部情報を出さない。
+    return {
+      error: experimentPreparationBridgeUnavailableError,
+    };
+  }
+};
