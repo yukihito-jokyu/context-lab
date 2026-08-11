@@ -190,6 +190,19 @@ func TestStoreCreateExperimentFromBrief(t *testing.T) {
 			if promptCount != 2 {
 				t.Errorf("prompt count = %d, want 2", promptCount)
 			}
+			preparation, found, preparationErr := store.GetExperimentPreparation(context.Background(), got.ExperimentID)
+			if preparationErr != nil {
+				t.Fatalf("GetExperimentPreparation() error = %v", preparationErr)
+			}
+			if !found {
+				t.Fatal("GetExperimentPreparation() found = false, want true")
+			}
+			if preparation.Purpose != "目的" || preparation.EnvironmentConditions != "隔離環境" || preparation.EvaluationAxes != "正確性" || preparation.InitialInput != "初期入力" {
+				t.Errorf("GetExperimentPreparation() = %+v, want adopted values", preparation)
+			}
+			if gotPrompts := len(preparation.Prompts); gotPrompts != 2 {
+				t.Errorf("GetExperimentPreparation() prompts = %d, want 2", gotPrompts)
+			}
 			second, secondCreated, secondErr := store.CreateExperimentFromBrief(context.Background(), tt.requestID, "session-1", tt.briefVersionID)
 			if secondErr != nil {
 				t.Fatalf("second CreateExperimentFromBrief() error = %v", secondErr)
