@@ -47,6 +47,7 @@ function ExperimentCard({
   onOpenExperiment: (experimentId: string, state: string) => void;
 }) {
   const isPreparing = experiment.state === "preparing";
+  const canOpen = experiment.state !== "cancelled";
 
   return (
     <li>
@@ -74,14 +75,16 @@ function ExperimentCard({
               <span>派生元: {experiment.derivedFromExperimentId}</span>
             )}
           </div>
-          <Button
-            id={`open-experiment-${experiment.id}`}
-            onClick={() => onOpenExperiment(experiment.id, experiment.state)}
-            type="button"
-            variant="outline"
-          >
-            {isPreparing ? "実験準備を開く" : "実験を開く"}
-          </Button>
+          {canOpen && (
+            <Button
+              id={`open-experiment-${experiment.id}`}
+              onClick={() => onOpenExperiment(experiment.id, experiment.state)}
+              type="button"
+              variant="outline"
+            >
+              {isPreparing ? "実験準備を開く" : "実験を開く"}
+            </Button>
+          )}
         </CardContent>
       </Card>
     </li>

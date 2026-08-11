@@ -25,6 +25,7 @@ import type {
   GetExperimentPreparationResponse,
   GetExperimentPreparationService,
 } from "./services/get-experiment-preparation-service";
+import { experimentPreparationBridgeUnavailableError } from "./services/get-experiment-preparation-service";
 import type {
   SaveExperimentPreparationDraftInput,
   SaveExperimentPreparationDraftService,
@@ -37,12 +38,6 @@ type ExperimentPreparationPageProps = {
   fixExperimentConditions: FixExperimentConditionsService;
   onBackToExperimentList?: () => void;
   onConditionsFixed?: (experimentId: string, operationId: string) => void;
-};
-
-const preparationQueryUnavailable = {
-  code: "WAILS_BRIDGE_UNAVAILABLE",
-  message:
-    "アプリとの通信を開始できませんでした。アプリを再起動してから再試行してください。",
 };
 
 type DraftForm = Omit<
@@ -385,7 +380,7 @@ export function ExperimentPreparationPage({
     try {
       response = await getExperimentPreparation(experimentId);
     } catch {
-      setError(preparationQueryUnavailable);
+      setError(experimentPreparationBridgeUnavailableError);
       setIsLoading(false);
       return;
     }

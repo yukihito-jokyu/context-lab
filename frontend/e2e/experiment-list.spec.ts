@@ -840,6 +840,13 @@ test("準備中の実験を一覧から再開できる", async ({ page }) => {
   ).toBeVisible();
 });
 
+test("取消済みの実験には開く操作を表示しない", async ({ page }) => {
+  await installListExperimentsMock(page, [successResponse]);
+  await page.goto("/");
+
+  await expect(page.locator("#open-experiment-EXP-007")).toHaveCount(0);
+});
+
 test("空状態を表示する", async ({ page }) => {
   await installListExperimentsMock(page, [emptyResponse]);
   await page.goto("/");
