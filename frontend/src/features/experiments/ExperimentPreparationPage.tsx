@@ -22,6 +22,7 @@ import type {
 } from "./services/fix-experiment-conditions-service";
 import type {
   ExperimentPreparation,
+  GetExperimentPreparationResponse,
   GetExperimentPreparationService,
 } from "./services/get-experiment-preparation-service";
 import type {
@@ -374,32 +375,37 @@ export function ExperimentPreparationPage({
     setData(undefined);
     setError(undefined);
     setIsEmpty(false);
+    let response: GetExperimentPreparationResponse;
     try {
-      const response = await getExperimentPreparation(experimentId);
-      if (response.data) {
-        setData(response.data);
-        const adoptedEnvironmentConditions = takeAdoptedEnvironmentConditions();
-        setDraft({
-          ...toDraft(response.data),
-          environmentConditions:
-            adoptedEnvironmentConditions ?? response.data.environmentConditions,
-        });
-        setSavedAt(undefined);
-        return;
-      }
-      if (!response.error) {
-        setIsEmpty(true);
-        return;
-      }
-      setError(response.error);
+      response = await getExperimentPreparation(experimentId);
     } catch {
       setError({
         code: "UNKNOWN",
         message: "実験準備を取得できませんでした。",
       });
-    } finally {
       setIsLoading(false);
+      return;
     }
+
+    if (response.data) {
+      setData(response.data);
+      const adoptedEnvironmentConditions = takeAdoptedEnvironmentConditions();
+      setDraft({
+        ...toDraft(response.data),
+        environmentConditions:
+          adoptedEnvironmentConditions ?? response.data.environmentConditions,
+      });
+      setSavedAt(undefined);
+      setIsLoading(false);
+      return;
+    }
+    if (!response.error) {
+      setIsEmpty(true);
+      setIsLoading(false);
+      return;
+    }
+    setError(response.error);
+    setIsLoading(false);
   }, [experimentId, getExperimentPreparation]);
 
   useEffect(() => {

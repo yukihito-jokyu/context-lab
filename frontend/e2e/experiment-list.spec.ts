@@ -1196,6 +1196,31 @@ const completeBriefResponse = {
   },
 };
 
+const completeExperimentPreparationResponse = {
+  data: {
+    experimentId: "EXP-015",
+    state: "preparing",
+    purpose: "問い合わせ要約の品質を比較する",
+    hypothesis: "根拠を保つpromptが正確性を高める",
+    environmentConditions: "同じ入力と評価手順を用いる",
+    initialInput: "顧客問い合わせ本文",
+    prompts: [
+      { sequenceNo: 1, content: "短く要約する" },
+      { sequenceNo: 2, content: "根拠を保って要約する" },
+    ],
+    evaluationAxes: "正確性、要点保持",
+    source: { state: "adopted", versionId: "brief-complete-v1" },
+    requiredFields: {
+      purpose: true,
+      environmentConditions: true,
+      initialInput: true,
+      prompts: true,
+      evaluationAxes: true,
+    },
+    lastConfirmedAt: confirmedAt,
+  },
+};
+
 test("完全なブリーフを採用して準備画面へ遷移する", async ({ page }) => {
   await installListExperimentsMock(page, [successResponse]);
   await installExperimentBriefingMock(
@@ -1205,11 +1230,42 @@ test("完全なブリーフを採用して準備画面へ遷移する", async ({
     [],
     [{ data: { experimentId: "EXP-015", state: "preparing" } }],
   );
+  await installExperimentPreparationMock(page, [
+    completeExperimentPreparationResponse,
+  ]);
   await page.goto("/");
 
   await page.locator("#new-experiment-button").click();
   await page.locator("#submit-create-experiment-button").click();
   await expect(page).toHaveURL(/\/experiments\/EXP-015\/preparation$/);
+  await expect(
+    page.getByRole("heading", { name: "実験の条件を準備する" }),
+  ).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "候補prompt 2" })).toHaveValue(
+    "根拠を保って要約する",
+  );
+});
+
+test("Storageが使えなくても実験準備を表示する", async ({ page }) => {
+  await installExperimentPreparationMock(page, [
+    completeExperimentPreparationResponse,
+  ]);
+  await page.addInitScript(() => {
+    Object.defineProperty(Storage.prototype, "getItem", {
+      configurable: true,
+      value: () => {
+        throw new DOMException("storage unavailable", "SecurityError");
+      },
+    });
+  });
+  await page.goto("/experiments/EXP-015/preparation");
+
+  await expect(
+    page.getByRole("heading", { name: "実験の条件を準備する" }),
+  ).toBeVisible();
+  await expect(page.getByText("実験準備を取得できませんでした。")).toHaveCount(
+    0,
+  );
 });
 
 test("採用失敗時はブリーフと会話を維持して再試行できる", async ({ page }) => {
