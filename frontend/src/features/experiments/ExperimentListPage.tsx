@@ -30,6 +30,7 @@ type ExperimentListPageProps = {
   createExperimentFromBrief: CreateExperimentFromBriefService;
   sendExperimentBriefMessage: SendExperimentBriefMessageService;
   stopExperimentBriefing: StopExperimentBriefingService;
+  onOpenExperiment: (experimentId: string, state: string) => void;
 };
 
 const stateBadgeVariant = (state: string) => {
@@ -40,9 +41,13 @@ const stateBadgeVariant = (state: string) => {
 
 function ExperimentCard({
   experiment,
+  onOpenExperiment,
 }: {
   experiment: NonNullable<ListData>["experiments"][number];
+  onOpenExperiment: (experimentId: string, state: string) => void;
 }) {
+  const isPreparing = experiment.state === "preparing";
+
   return (
     <li>
       <Card>
@@ -69,6 +74,14 @@ function ExperimentCard({
               <span>派生元: {experiment.derivedFromExperimentId}</span>
             )}
           </div>
+          <Button
+            id={`open-experiment-${experiment.id}`}
+            onClick={() => onOpenExperiment(experiment.id, experiment.state)}
+            type="button"
+            variant="outline"
+          >
+            {isPreparing ? "実験準備を開く" : "実験を開く"}
+          </Button>
         </CardContent>
       </Card>
     </li>
@@ -82,6 +95,7 @@ export function ExperimentListPage({
   createExperimentFromBrief,
   sendExperimentBriefMessage,
   stopExperimentBriefing,
+  onOpenExperiment,
 }: ExperimentListPageProps) {
   const [data, setData] = useState<ListData>();
   const [isLoading, setIsLoading] = useState(true);
@@ -225,7 +239,11 @@ export function ExperimentListPage({
               </div>
               <ul className="space-y-3">
                 {data.experiments.map((experiment) => (
-                  <ExperimentCard experiment={experiment} key={experiment.id} />
+                  <ExperimentCard
+                    experiment={experiment}
+                    key={experiment.id}
+                    onOpenExperiment={onOpenExperiment}
+                  />
                 ))}
               </ul>
             </section>
@@ -271,7 +289,11 @@ export function ExperimentListPage({
               </summary>
               <ul className="mt-4 space-y-3">
                 {data.cancelledExperiments.map((experiment) => (
-                  <ExperimentCard experiment={experiment} key={experiment.id} />
+                  <ExperimentCard
+                    experiment={experiment}
+                    key={experiment.id}
+                    onOpenExperiment={onOpenExperiment}
+                  />
                 ))}
               </ul>
             </details>

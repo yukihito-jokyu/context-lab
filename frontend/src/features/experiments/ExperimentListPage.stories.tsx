@@ -63,7 +63,7 @@ const stopExperimentBriefing = async () => ({
 const meta = {
   component: ExperimentListPage,
   title: "Features/Experiments/ExperimentListPage",
-  args: { stopExperimentBriefing },
+  args: { onOpenExperiment: fn(), stopExperimentBriefing },
 } satisfies Meta<typeof ExperimentListPage>;
 export default meta;
 type Story = StoryObj<typeof meta>;

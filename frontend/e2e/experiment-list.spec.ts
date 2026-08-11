@@ -6,7 +6,9 @@ type GetExperimentBriefingResponse = Record<string, unknown>;
 type SendExperimentBriefMessageResponse = Record<string, unknown>;
 type CreateExperimentFromBriefResponse = Record<string, unknown>;
 type StopExperimentBriefingResponse = Record<string, unknown>;
-type GetExperimentPreparationResponse = Record<string, unknown>;
+type GetExperimentPreparationResponse = Record<string, unknown> & {
+  throwMessage?: string;
+};
 type SaveExperimentPreparationDraftResponse = Record<string, unknown>;
 type FixExperimentConditionsResponse = Record<string, unknown>;
 type GetExperimentWorkspaceResponse = Record<string, unknown>;
@@ -241,6 +243,9 @@ async function installExperimentPreparationMock(
         GetExperimentPreparation: () => {
           const response = responses[Math.min(callCount, responses.length - 1)];
           callCount += 1;
+          if (response.throwMessage) {
+            return Promise.reject(new Error(response.throwMessage));
+          }
           if (response.delayMs) {
             return new Promise((resolve) => {
               window.setTimeout(() => resolve(response.result), response.delayMs);
@@ -801,6 +806,40 @@ test("一覧を表示する", async ({ page }) => {
   await expect(page.getByText("顧客問い合わせ要約の比較")).toBeVisible();
 });
 
+test("準備中の実験を一覧から再開できる", async ({ page }) => {
+  await installListExperimentsMock(page, [
+    {
+      data: {
+        experiments: [
+          {
+            id: "EXP-015",
+            purpose: "問い合わせ要約の品質を比較する",
+            state: "preparing",
+            progressSummary: "条件を準備中",
+            updatedAt: confirmedAt,
+          },
+        ],
+        cancelledExperiments: [],
+        resumeSummary: {
+          recommendedExperimentId: "EXP-015",
+          statusCounts: { preparing: 1 },
+        },
+        lastConfirmedAt: confirmedAt,
+      },
+    },
+  ]);
+  await installExperimentPreparationMock(page, [
+    completeExperimentPreparationResponse,
+  ]);
+  await page.goto("/");
+
+  await page.locator("#open-experiment-EXP-015").click();
+  await expect(page).toHaveURL("/experiments/EXP-015/preparation");
+  await expect(
+    page.getByRole("heading", { name: "実験の条件を準備する" }),
+  ).toBeVisible();
+});
+
 test("空状態を表示する", async ({ page }) => {
   await installListExperimentsMock(page, [emptyResponse]);
   await page.goto("/");
@@ -1265,6 +1304,23 @@ test("Storageが使えなくても実験準備を表示する", async ({ page })
   ).toBeVisible();
   await expect(page.getByText("実験準備を取得できませんでした。")).toHaveCount(
     0,
+  );
+});
+
+test("Wailsブリッジ例外を安全なエラーとして表示する", async ({ page }) => {
+  await installExperimentPreparationMock(page, [
+    { throwMessage: "native bridge details must not be displayed" },
+  ]);
+  await page.goto("/experiments/EXP-015/preparation");
+
+  await expect(page.locator("#preparation-load-error")).toContainText(
+    "アプリとの通信を開始できませんでした。",
+  );
+  await expect(page.locator("#preparation-load-error-code")).toHaveText(
+    "WAILS_BRIDGE_UNAVAILABLE",
+  );
+  await expect(page.locator("#preparation-load-error")).not.toContainText(
+    "native bridge details",
   );
 });
 

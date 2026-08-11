@@ -39,6 +39,12 @@ type ExperimentPreparationPageProps = {
   onConditionsFixed?: (experimentId: string, operationId: string) => void;
 };
 
+const preparationQueryUnavailable = {
+  code: "WAILS_BRIDGE_UNAVAILABLE",
+  message:
+    "アプリとの通信を開始できませんでした。アプリを再起動してから再試行してください。",
+};
+
 type DraftForm = Omit<
   SaveExperimentPreparationDraftInput,
   "requestId" | "experimentId"
@@ -379,10 +385,7 @@ export function ExperimentPreparationPage({
     try {
       response = await getExperimentPreparation(experimentId);
     } catch {
-      setError({
-        code: "UNKNOWN",
-        message: "実験準備を取得できませんでした。",
-      });
+      setError(preparationQueryUnavailable);
       setIsLoading(false);
       return;
     }
@@ -533,6 +536,10 @@ export function ExperimentPreparationPage({
             </AlertTitle>
             <AlertDescription className="space-y-4">
               <p>{error.message}</p>
+              <p className="text-sm text-muted-foreground">
+                エラーコード:{" "}
+                <span id="preparation-load-error-code">{error.code}</span>
+              </p>
               <Button
                 id="reload-preparation-button"
                 onClick={() => void load()}
